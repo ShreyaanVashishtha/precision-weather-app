@@ -1,18 +1,13 @@
 export default async function handler(request, response) {
-  // Vercel automatically parses query parameters into request.query
   const lat = parseFloat(request.query.lat) || 22.3193;
   const lon = parseFloat(request.query.lon) || 114.1694;
 
   const tomorrowKey = process.env.TOMORROW_IO_KEY;
-  // Bounding box for Hong Kong Territory
   const isHongKong = lat >= 22.15 && lat <= 22.60 && lon >= 113.80 && lon <= 114.40;
 
-  // Global & Local Endpoints
   const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,surface_pressure,wind_speed_10m,wind_gusts_10m,visibility&hourly=temperature_2m,relative_humidity_2m,precipitation_probability,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&wind_speed_unit=ms&timezone=auto`;
   const aqiUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=european_aqi,pm10,pm2_5`;
   const tomorrowUrl = `https://api.tomorrow.io/v4/weather/forecast?location=${lat},${lon}&timesteps=1m&apikey=${tomorrowKey}`;
-  
-  // HKO Official Endpoints
   const hkoCurrentUrl = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rwr&lang=en";
   const hkoForecastUrl = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=fnd&lang=en";
   const hkoWarnUrl = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=warnsum&lang=en";
@@ -33,7 +28,6 @@ export default async function handler(request, response) {
 
     if (!om) return response.status(500).json({ error: "Core atmospheric network offline." });
 
-    // Standardize Weather Codes
     const mapCode = (code) => {
       const map = {
         0: { text: "Clear Sky", icon: "sun" }, 1: { text: "Mostly Clear", icon: "sun" }, 2: { text: "Partly Cloudy", icon: "cloud-sun" }, 3: { text: "Overcast", icon: "cloud" },
@@ -44,24 +38,19 @@ export default async function handler(request, response) {
     };
 
     const nowTimestamp = new Date().toLocaleTimeString('en-HK', { hour: '2-digit', minute: '2-digit' });
+    const currentWMO = mapCode(om.current.weather_code);
 
-    // Base Payload Construction
     let payload = {
       meta: {
         timestamp: nowTimestamp,
         station: isHongKong ? "HKO Headquarters" : "Global Sensor Network",
-        sources: {
-          current: "Open-Meteo Global",
-          forecast: "Open-Meteo + Tomorrow.io",
-          aqi: "European AQI",
-          warnings: "None"
-        }
+        sources: { current: "Open-Meteo Global", forecast: "Open-Meteo + Tomorrow.io", aqi: "European AQI", warnings: "None" }
       },
       current: {
         temp: om.current.temperature_2m, feelsLike: om.current.apparent_temperature,
         high: om.daily.temperature_2m_max[0] || om.current.temperature_2m,
         low: om.daily.temperature_2m_min[0] || om.current.temperature_2m,
-        condition: mapCode(om.current.weather_code).text, icon: mapCode(om.current.weather_code).icon,
+        condition: currentWMO.text, icon: currentWMO.icon,
         humidity: om.current.relative_humidity_2m,
         dewPoint: om.current.temperature_2m - ((100 - om.current.relative_humidity_2m) / 5),
         windSpeed: om.current.wind_speed_10m, windGust: om.current.wind_gusts_10m || 0,
@@ -69,10 +58,7 @@ export default async function handler(request, response) {
         pressure: om.current.surface_pressure, visibility: Math.round((om.current.visibility || 10000) / 1000)
       },
       aqi: { index: 0, pm25: 0, pm10: 0, label: "Good", color: "#4ADE80" },
-      warnings: [],
-      cyclone: null,
-      insights: [],
-      nowcast: [],
+      warnings: [], cyclone: null, insights: [], nowcast: [],
       hourly: om.hourly.time.map((t, i) => ({
         time: new Date(t).toLocaleTimeString([], { hour: 'numeric', hour12: true }),
         temp: om.hourly.temperature_2m[i], precip: om.hourly.precipitation_probability[i] || 0,
@@ -82,11 +68,10 @@ export default async function handler(request, response) {
         date: new Date(t).toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' }),
         high: om.daily.temperature_2m_max[i], low: om.daily.temperature_2m_min[i],
         precip: om.daily.precipitation_probability_max[i] || 0, icon: mapCode(om.daily.weather_code[i]).icon,
-        desc: mapCode(om.daily.weather_code[i]).text, humidityRange: "60-85%" // Mocked fallback
+        desc: mapCode(om.daily.weather_code[i]).text, humidityRange: "60-85%"
       }))
     };
 
-    // Integrate AQI
     if (aqi?.current) {
       const val = aqi.current.european_aqi;
       payload.aqi = {
@@ -96,18 +81,15 @@ export default async function handler(request, response) {
       };
     }
 
-    // Integrate Tomorrow.io Nowcast
     if (tomorrow?.data?.timelines) {
       payload.nowcast = tomorrow.data.timelines.minutely.slice(0, 120).filter((_, i) => i % 15 === 0).map((m, i) => ({
         label: i === 0 ? "Now" : `+${i * 15}m`,
-        precipProb: m.values.precipitationProbability || 0,
-        precipInt: m.values.rainIntensity || 0,
-        temp: m.values.temperature,
-        wind: m.values.windSpeed
+        precipProb: m.values.precipitationProbability || 0, precipInt: m.values.rainIntensity || 0,
+        temp: m.values.temperature, wind: m.values.windSpeed
       }));
     }
 
-    // Overwrite with HKO Official Data if available
+    // --- CRITICAL FIX: Safe HKO parsing ---
     if (isHongKong) {
       if (hkoCurrent?.temperature?.data) {
         const hkTemp = hkoCurrent.temperature.data.find(d => d.place === "Hong Kong Observatory") || hkoCurrent.temperature.data[0];
@@ -122,16 +104,21 @@ export default async function handler(request, response) {
         payload.meta.sources.forecast = "HKO Official 9-Day + Open-Meteo";
         payload.daily = hkoForecast.weatherForecast.map(d => {
           let icon = "cloud";
-          if (d.ForecastWeather.toLowerCase().includes("rain") || d.ForecastWeather.toLowerCase().includes("shower")) icon = "cloud-rain";
-          if (d.ForecastWeather.toLowerCase().includes("sun") || d.ForecastWeather.toLowerCase().includes("fine")) icon = "sun";
-          if (d.ForecastWeather.toLowerCase().includes("thunder")) icon = "cloud-lightning";
+          // Safely extract the weather string and convert to lowercase
+          const desc = d.forecastWeather || "Cloudy"; 
+          const descLower = desc.toLowerCase();
+          
+          if (descLower.includes("rain") || descLower.includes("shower")) icon = "cloud-rain";
+          if (descLower.includes("sun") || descLower.includes("fine")) icon = "sun";
+          if (descLower.includes("thunder")) icon = "cloud-lightning";
           
           return {
             date: d.forecastDate.substring(4,6) + "/" + d.forecastDate.substring(6,8) + " (" + d.week + ")",
-            high: d.forecastMaxtemp.value, low: d.forecastMintemp.value,
+            high: d.forecastMaxtemp?.value || payload.current.high, 
+            low: d.forecastMintemp?.value || payload.current.low,
             precip: d.PSR === "High" ? 80 : d.PSR === "Medium High" ? 60 : d.PSR === "Medium" ? 40 : 10,
-            icon: icon, desc: d.ForecastWeather,
-            humidityRange: `${d.forecastMinrh.value}-${d.forecastMaxrh.value}%`
+            icon: icon, desc: desc,
+            humidityRange: `${d.forecastMinrh?.value || 60}-${d.forecastMaxrh?.value || 85}%`
           };
         });
       }
@@ -162,14 +149,14 @@ export default async function handler(request, response) {
     else if (maxPop > 50) payload.insights.push(`High probability of precipitation (${maxPop}%) expected later today.`);
     else payload.insights.push("Atmospheric moisture levels suggest stable, dry conditions over the next 12 hours.");
     
+    payload.current.uvLabel = payload.current.uvIndex > 7 ? "Very High" : payload.current.uvIndex > 3 ? "Moderate" : "Low";
     if (payload.current.uvIndex >= 8) payload.insights.push(`UV exposure is extremely dangerous (Index ${payload.current.uvIndex}). Strict sun protection required.`);
     if (payload.current.humidity > 85) payload.insights.push("High atmospheric humidity detected. Heat index and physical discomfort may increase.");
     if (payload.warnings.length === 0) payload.insights.push("No severe weather signals are currently active.");
     
     payload.insights.push("Forecast Confidence: High (Multi-model convergence achieved).");
-    payload.summary = `Conditions are currently ${payload.current.condition.toLowerCase()} with a temperature of ${Math.round(payload.current.temp)}°C. ${maxPop > 50 ? `Showers are likely later with a ${maxPop}% probability.` : 'No significant rainfall is expected.'} UV levels remain ${payload.current.uvLabel.toLowerCase()}.`;
+    payload.summary = `Conditions are currently ${(payload.current.condition || "stable").toLowerCase()} with a temperature of ${Math.round(payload.current.temp)}°C. ${maxPop > 50 ? `Showers are likely later with a ${maxPop}% probability.` : 'No significant rainfall is expected.'} UV levels remain ${payload.current.uvLabel.toLowerCase()}.`;
 
-    // Vercel standard response
     return response.status(200).json(payload);
   } catch (error) {
     return response.status(500).json({ error: `Backend exception: ${error.message}` });
