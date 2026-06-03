@@ -3,6 +3,7 @@ export default async (request, context) => {
   const lat = url.searchParams.get("lat");
   const lon = url.searchParams.get("lon");
 
+  // Validate presence of coordinate vectors
   if (!lat || !lon) {
     return Response.json({ error: "Missing required location vectors." }, { status: 400 });
   }
@@ -12,6 +13,7 @@ export default async (request, context) => {
     return Response.json({ error: "Server environment key layer configuration missing." }, { status: 500 });
   }
 
+  // Requests structural 1-minute tracking arrays spanning the 1-hour window
   const tomorrowUrl = `https://api.tomorrow.io/v4/weather/forecast?location=${lat},${lon}&timesteps=1m&apikey=${apiKey}`;
 
   try {
