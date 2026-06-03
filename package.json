@@ -1,0 +1,22 @@
+{
+  "name": "precision-weather-app",
+  "version": "1.0.0",
+  "description": "Hong Kong Weather Intelligence Application",
+  "type": "module",
+  "scripts": {
+    "dev": "npx serve .",
+    "build": "echo 'No build step required for vanilla HTML/JS'",
+    "test": "echo 'No tests configured'"
+  },
+  "dependencies": {
+    "@vercel/speed-insights": "^1.0.14"
+  },
+  "devDependencies": {},
+  "keywords": [
+    "weather",
+    "hong-kong",
+    "vercel"
+  ],
+  "author": "",
+  "license": "ISC"
+}
