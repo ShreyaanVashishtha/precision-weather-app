@@ -37,7 +37,12 @@ export default async function handler(request, response) {
       return map[code] || { text: "Cloudy", icon: "cloud" };
     };
 
-    const nowTimestamp = new Date().toLocaleTimeString('en-HK', { hour: '2-digit', minute: '2-digit' });
+    const nowTimestamp = new Date().toLocaleTimeString('en-HK', { 
+  timeZone: 'Asia/Hong_Kong', 
+  hour: '2-digit', 
+  minute: '2-digit',
+  hour12: true 
+});
     const currentWMO = mapCode(om.current.weather_code);
 
     let payload = {
