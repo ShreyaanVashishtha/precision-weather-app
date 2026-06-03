@@ -3,108 +3,116 @@ export default async (request, context) => {
   const lat = parseFloat(url.searchParams.get("lat"));
   const lon = parseFloat(url.searchParams.get("lon"));
 
-  if (isNaN(lat) || isNaN(lon)) {
-    return Response.json({ error: "Missing or invalid location vectors." }, { status: 400 });
-  }
+  if (isNaN(lat) || isNaN(lon)) return Response.json({ error: "Invalid vectors" }, { status: 400 });
 
-  const tomorrowKey = process.env.TOMORROW_IO_KEY;
-  if (!tomorrowKey) {
-    return Response.json({ error: "Server environment key layer missing." }, { status: 500 });
-  }
-
-  const isHongKong = lat >= 22.15 && lat <= 22.60 && lon >= 113.80 && lon <= 114.40;
-
-  const tomorrowUrl = `https://api.tomorrow.io/v4/weather/forecast?location=${lat},${lon}&apikey=${tomorrowKey}`;
-  const openMeteoUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,wind_speed_10m,surface_pressure,precipitation&hourly=temperature_2m,precipitation_probability`;
-  const hkoUrl = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rwr&lang=en";
+  // Core API Endpoints
+  const omUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m,relative_humidity_2m,apparent_temperature,weather_code,surface_pressure,wind_speed_10m,wind_direction_10m,wind_gusts_10m,visibility&hourly=temperature_2m,precipitation_probability,weather_code,wind_speed_10m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,uv_index_max&timezone=auto`;
+  const aqiUrl = `https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${lat}&longitude=${lon}&current=european_aqi,pm10,pm2_5`;
 
   try {
-    const safeFetch = (fetchUrl) => fetch(fetchUrl).catch(err => ({ ok: false, error: err }));
+    const safeFetch = (url) => fetch(url).catch(err => ({ ok: false }));
+    const [omRes, aqiRes] = await Promise.all([safeFetch(omUrl), safeFetch(aqiUrl)]);
+
+    if (!omRes.ok) return Response.json({ error: "Core atmospheric network offline." }, { status: 500 });
     
-    const fetchPromises = [
-      safeFetch(tomorrowUrl),
-      safeFetch(openMeteoUrl)
-    ];
-    if (isHongKong) fetchPromises.push(safeFetch(hkoUrl));
+    const weather = await omRes.json();
+    const aqiData = aqiRes.ok ? await aqiRes.json() : null;
 
-    const results = await Promise.all(fetchPromises);
+    // Helper: Weather Code Translator
+    const mapCode = (code) => {
+      const map = {
+        0: { text: "Clear Sky", icon: "sun" },
+        1: { text: "Mostly Clear", icon: "sun" },
+        2: { text: "Partly Cloudy", icon: "cloud-sun" },
+        3: { text: "Overcast", icon: "cloud" },
+        45: { text: "Fog", icon: "cloud-fog" },
+        48: { text: "Freezing Fog", icon: "cloud-fog" },
+        51: { text: "Light Drizzle", icon: "cloud-drizzle" },
+        53: { text: "Drizzle", icon: "cloud-drizzle" },
+        55: { text: "Heavy Drizzle", icon: "cloud-drizzle" },
+        61: { text: "Light Rain", icon: "cloud-rain" },
+        63: { text: "Moderate Rain", icon: "cloud-rain" },
+        65: { text: "Heavy Rain", icon: "cloud-rain" },
+        71: { text: "Light Snow", icon: "cloud-snow" },
+        73: { text: "Moderate Snow", icon: "cloud-snow" },
+        75: { text: "Heavy Snow", icon: "cloud-snow" },
+        95: { text: "Thunderstorm", icon: "cloud-lightning" },
+        99: { text: "Severe Storm", icon: "cloud-lightning" }
+      };
+      return map[code] || { text: "Unknown", icon: "cloud" };
+    };
+
+    const currentWMO = mapCode(weather.current.weather_code);
     
-    const tomorrowRes = results[0];
-    const openMeteoRes = results[1];
-    const hkoRes = isHongKong ? results[2] : null;
+    // Compile AI Intelligence Insights
+    let insights = [];
+    const maxT = weather.daily.temperature_2m_max[0];
+    const maxUV = weather.daily.uv_index_max[0];
+    const maxPop = Math.max(...weather.hourly.precipitation_probability.slice(0, 12));
     
-    // Track successfully blended sources for frontend attribution
-    let activeSources = [];
+    insights.push(`Temperatures will peak near ${Math.round(maxT)}°C today.`);
+    if(maxPop > 60) insights.push(`High probability of precipitation (${maxPop}%) expected in the coming hours.`);
+    else insights.push(`No significant precipitation expected in the short term.`);
+    if(maxUV > 7) insights.push(`UV exposure is dangerous (Index ${Math.round(maxUV)}). Sun protection is strictly required.`);
+    if(weather.current.wind_gusts_10m > 15) insights.push(`Caution: Strong wind gusts up to ${Math.round(weather.current.wind_gusts_10m)} m/s detected.`);
 
-    if (!tomorrowRes || !tomorrowRes.ok) {
-      const statusText = tomorrowRes ? tomorrowRes.status : 'Network Timeout';
-      return Response.json({ error: `Tomorrow.io baseline failed. Status: ${statusText}` }, { status: tomorrowRes ? tomorrowRes.status : 500 });
+    // Map AQI Logic
+    let aqi = { index: 0, pm25: 0, label: "Unknown", color: "#938F99" };
+    if (aqiData && aqiData.current) {
+      const val = aqiData.current.european_aqi;
+      aqi = {
+        index: val,
+        pm25: aqiData.current.pm2_5,
+        label: val <= 50 ? "Good" : val <= 100 ? "Moderate" : "Poor",
+        color: val <= 50 ? "#4ADE80" : val <= 100 ? "#F59E0B" : "#EF4444"
+      };
+      if (val > 100) insights.push("Air quality is severely reduced. Sensitive groups should remain indoors.");
     }
 
-    let blendedData;
-    try {
-      blendedData = await tomorrowRes.json();
-      activeSources.push("Tomorrow.io");
-    } catch (e) {
-      return Response.json({ error: 'Tomorrow.io returned corrupted JSON.' }, { status: 500 });
-    }
+    // Format final JSON Contract for the Dashboard
+    const responsePayload = {
+      current: {
+        temp: weather.current.temperature_2m,
+        feelsLike: weather.current.apparent_temperature,
+        high: weather.daily.temperature_2m_max[0],
+        low: weather.daily.temperature_2m_min[0],
+        condition: currentWMO.text,
+        icon: currentWMO.icon,
+        humidity: weather.current.relative_humidity_2m,
+        dewPoint: weather.current.temperature_2m - ((100 - weather.current.relative_humidity_2m) / 5),
+        windSpeed: weather.current.wind_speed_10m,
+        windGust: weather.current.wind_gusts_10m,
+        uvIndex: Math.round(maxUV),
+        uvLabel: maxUV > 7 ? "Very High" : maxUV > 3 ? "Moderate" : "Low",
+        pressure: weather.current.surface_pressure,
+        pressureTrend: "Stable",
+        visibility: Math.round(weather.current.visibility / 1000)
+      },
+      aqi: aqi,
+      alerts: maxPop > 80 && weather.current.wind_gusts_10m > 20 ? [{
+        title: "Severe Weather Warning",
+        description: "Heavy rain and strong wind gusts detected in the local atmospheric sector.",
+        color: "#F59E0B"
+      }] : [],
+      insights: insights,
+      hourly: weather.hourly.time.map((t, i) => ({
+        time: new Date(t).toLocaleTimeString([], { hour: 'numeric' }),
+        temp: weather.hourly.temperature_2m[i],
+        precip: weather.hourly.precipitation_probability[i],
+        icon: mapCode(weather.hourly.weather_code[i]).icon
+      })),
+      daily: weather.daily.time.map((t, i) => ({
+        date: new Date(t).toLocaleDateString([], { weekday: 'short' }),
+        high: weather.daily.temperature_2m_max[i],
+        low: weather.daily.temperature_2m_min[i],
+        precip: weather.daily.precipitation_probability_max[i],
+        icon: mapCode(weather.daily.weather_code[i]).icon
+      }))
+    };
 
-    let currentMinutelyNode = blendedData.timelines?.minutely?.[0]?.values;
-    let hourlyTimeline = blendedData.timelines?.hourly;
-
-    // Open-Meteo Blend
-    if (openMeteoRes && openMeteoRes.ok) {
-      try {
-        const omData = await openMeteoRes.json();
-        let utilized = false;
-        if (currentMinutelyNode && omData.current) {
-          currentMinutelyNode.temperature = (currentMinutelyNode.temperature * 0.5) + (omData.current.temperature_2m * 0.5);
-          currentMinutelyNode.humidity = (currentMinutelyNode.humidity * 0.5) + (omData.current.relative_humidity_2m * 0.5);
-          currentMinutelyNode.windSpeed = (currentMinutelyNode.windSpeed * 0.5) + (omData.current.wind_speed_10m * 0.5);
-          utilized = true;
-        }
-        if (hourlyTimeline && omData.hourly && omData.hourly.temperature_2m) {
-          for (let i = 0; i < Math.min(24, hourlyTimeline.length); i++) {
-            if (omData.hourly.temperature_2m[i] !== undefined) {
-               hourlyTimeline[i].values.temperature = (hourlyTimeline[i].values.temperature * 0.5) + (omData.hourly.temperature_2m[i] * 0.5);
-            }
-          }
-          utilized = true;
-        }
-        if(utilized) activeSources.push("Open-Meteo");
-      } catch (e) {
-        console.error("Open-Meteo parse error.");
-      }
-    }
-
-    // HKO Blend
-    if (hkoRes && hkoRes.ok) {
-      try {
-        const hkoJson = await hkoRes.json();
-        let utilized = false;
-        if (currentMinutelyNode) {
-           const hkoTempNode = hkoJson.temperature?.data?.find(d => d.place === "Hong Kong Observatory") || hkoJson.temperature?.data?.[0];
-           if (hkoTempNode && hkoTempNode.value !== undefined) {
-             currentMinutelyNode.temperature = (currentMinutelyNode.temperature * 0.4) + (parseFloat(hkoTempNode.value) * 0.6);
-             utilized = true;
-           }
-           
-           const hkoHumidityNode = hkoJson.humidity?.data?.[0];
-           if (hkoHumidityNode && hkoHumidityNode.value !== undefined) {
-             currentMinutelyNode.humidity = (currentMinutelyNode.humidity * 0.4) + (parseFloat(hkoHumidityNode.value) * 0.6);
-             utilized = true;
-           }
-        }
-        if(utilized) activeSources.push("Hong Kong Observatory (HKO)");
-      } catch (e) {
-         console.error("HKO parse error.");
-      }
-    }
-
-    // Return payload with source tracking array
-    return Response.json({ data: blendedData, sources: activeSources });
+    return Response.json(responsePayload);
 
   } catch (error) {
-    return Response.json({ error: `Backend exception: ${error.message}` }, { status: 500 });
+    return Response.json({ error: `Backend compute exception: ${error.message}` }, { status: 500 });
   }
 };
