@@ -19,7 +19,6 @@ export default async (request, context) => {
   const hkoUrl = "https://data.weather.gov.hk/weatherAPI/opendata/weather.php?dataType=rwr&lang=en";
 
   try {
-    // 1. Safe fetch wrappers to prevent any unhandled promise rejections
     const safeFetch = (fetchUrl) => fetch(fetchUrl).catch(err => ({ ok: false, error: err }));
     
     const fetchPromises = [
@@ -33,8 +32,10 @@ export default async (request, context) => {
     const tomorrowRes = results[0];
     const openMeteoRes = results[1];
     const hkoRes = isHongKong ? results[2] : null;
+    
+    // Track successfully blended sources for frontend attribution
+    let activeSources = [];
 
-    // 2. Tomorrow.io MUST succeed as the foundation
     if (!tomorrowRes || !tomorrowRes.ok) {
       const statusText = tomorrowRes ? tomorrowRes.status : 'Network Timeout';
       return Response.json({ error: `Tomorrow.io baseline failed. Status: ${statusText}` }, { status: tomorrowRes ? tomorrowRes.status : 500 });
@@ -43,22 +44,24 @@ export default async (request, context) => {
     let blendedData;
     try {
       blendedData = await tomorrowRes.json();
+      activeSources.push("Tomorrow.io");
     } catch (e) {
       return Response.json({ error: 'Tomorrow.io returned corrupted JSON.' }, { status: 500 });
     }
 
-    // Tomorrow.io V4 structure points
     let currentMinutelyNode = blendedData.timelines?.minutely?.[0]?.values;
     let hourlyTimeline = blendedData.timelines?.hourly;
 
-    // 3. Open-Meteo Blend (Isolated Sandbox)
+    // Open-Meteo Blend
     if (openMeteoRes && openMeteoRes.ok) {
       try {
         const omData = await openMeteoRes.json();
+        let utilized = false;
         if (currentMinutelyNode && omData.current) {
           currentMinutelyNode.temperature = (currentMinutelyNode.temperature * 0.5) + (omData.current.temperature_2m * 0.5);
           currentMinutelyNode.humidity = (currentMinutelyNode.humidity * 0.5) + (omData.current.relative_humidity_2m * 0.5);
           currentMinutelyNode.windSpeed = (currentMinutelyNode.windSpeed * 0.5) + (omData.current.wind_speed_10m * 0.5);
+          utilized = true;
         }
         if (hourlyTimeline && omData.hourly && omData.hourly.temperature_2m) {
           for (let i = 0; i < Math.min(24, hourlyTimeline.length); i++) {
@@ -66,37 +69,42 @@ export default async (request, context) => {
                hourlyTimeline[i].values.temperature = (hourlyTimeline[i].values.temperature * 0.5) + (omData.hourly.temperature_2m[i] * 0.5);
             }
           }
+          utilized = true;
         }
+        if(utilized) activeSources.push("Open-Meteo");
       } catch (e) {
-        console.error("Open-Meteo blending skipped due to parse error.");
+        console.error("Open-Meteo parse error.");
       }
     }
 
-    // 4. HKO Blend (Isolated Sandbox)
+    // HKO Blend
     if (hkoRes && hkoRes.ok) {
       try {
         const hkoJson = await hkoRes.json();
+        let utilized = false;
         if (currentMinutelyNode) {
            const hkoTempNode = hkoJson.temperature?.data?.find(d => d.place === "Hong Kong Observatory") || hkoJson.temperature?.data?.[0];
            if (hkoTempNode && hkoTempNode.value !== undefined) {
              currentMinutelyNode.temperature = (currentMinutelyNode.temperature * 0.4) + (parseFloat(hkoTempNode.value) * 0.6);
+             utilized = true;
            }
            
            const hkoHumidityNode = hkoJson.humidity?.data?.[0];
            if (hkoHumidityNode && hkoHumidityNode.value !== undefined) {
              currentMinutelyNode.humidity = (currentMinutelyNode.humidity * 0.4) + (parseFloat(hkoHumidityNode.value) * 0.6);
+             utilized = true;
            }
         }
+        if(utilized) activeSources.push("Hong Kong Observatory (HKO)");
       } catch (e) {
-         console.error("HKO blending skipped due to parse error.");
+         console.error("HKO parse error.");
       }
     }
 
-    // 5. Wrap the mutated data back into { data: ... } so the frontend UI seamlessly maps it
-    return Response.json({ data: blendedData });
+    // Return payload with source tracking array
+    return Response.json({ data: blendedData, sources: activeSources });
 
   } catch (error) {
-    // Exact runtime exception returned to frontend for debugging
     return Response.json({ error: `Backend exception: ${error.message}` }, { status: 500 });
   }
 };
