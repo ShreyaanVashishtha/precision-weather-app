@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hyper-Precise Weather</title>
+  <title>Hyper-Precise Nowcast Dashboard</title>
+  
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
   <script type="importmap">
     {
       "imports": {
@@ -12,94 +14,247 @@
     }
   </script>
   <script type="module" src="https://esm.run/@material/web/all.js"></script>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
   <style>
+    :root {
+      --md-sys-color-primary: #6750A4;
+      --md-sys-color-background: #1C1B1F;
+      --md-sys-color-surface: #25242A;
+      --md-sys-color-on-surface: #E6E1E5;
+    }
+
     body {
-      font-family: Roboto, system-ui, sans-serif;
-      background-color: #f4f5f7;
+      font-family: 'Roboto', sans-serif;
+      background-color: var(--md-sys-color-background);
+      color: var(--md-sys-color-on-surface);
+      margin: 0;
+      padding: 1.5rem;
       display: flex;
       justify-content: center;
-      padding: 2rem;
-      margin: 0;
     }
-    .dashboard {
-      background: white;
-      padding: 2rem;
-      border-radius: 28px;
-      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+
+    .container {
       width: 100%;
-      max-width: 600px;
+      max-width: 800px;
+      display: flex;
+      flex-direction: column;
+      gap: 1.5rem;
     }
-    #output {
-      margin-top: 1.5rem;
-      padding: 1rem;
-      background: #e1e2e8;
-      border-radius: 12px;
-      font-family: monospace;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      max-height: 400px;
-      overflow-y: auto;
+
+    .header-card {
+      background: var(--md-sys-color-surface);
+      padding: 1.5rem;
+      border-radius: 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    h1 { margin: 0; font-size: 1.5rem; font-weight: 700; }
+    p { margin: 4px 0 0 0; color: #938F99; font-size: 0.9rem; }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+    }
+
+    .metric-card {
+      background: var(--md-sys-color-surface);
+      padding: 1.2rem;
+      border-radius: 16px;
+      text-align: center;
+    }
+
+    .metric-value { font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem; color: #D0BCFF; }
+    .metric-label { font-size: 0.8rem; color: #938F99; text-transform: uppercase; }
+
+    .visual-section {
+      background: var(--md-sys-color-surface);
+      padding: 1.5rem;
+      border-radius: 28px;
+    }
+
+    .section-title { font-size: 1.1rem; font-weight: 500; margin-bottom: 1rem; }
+
+    #map {
+      height: 350px;
+      border-radius: 16px;
+      z-index: 1;
+    }
+
+    .chart-container {
+      position: relative;
+      height: 250px;
+      width: 100%;
     }
   </style>
 </head>
 <body>
 
-  <div class="dashboard">
-    <h2>Minute-by-Minute Nowcast</h2>
-    <p id="status">Locating...</p>
-    <md-filled-button id="refreshBtn" disabled>Refresh Data</md-filled-button>
-    <div id="output">Awaiting data...</div>
+  <div class="container">
+    <div class="header-card">
+      <div>
+        <h1>Minute Nowcast</h1>
+        <p id="location-text">Detecting geolocation vectors...</p>
+      </div>
+      <md-filled-button id="refresh-btn" disabled>Refresh</md-filled-button>
+    </div>
+
+    <div class="metrics-grid">
+      <div class="metric-card">
+        <div class="metric-label">Temperature</div>
+        <div class="metric-value" id="meta-temp">--°C</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Precipitation</div>
+        <div class="metric-value" id="meta-rain">-- mm/h</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Wind Velocity</div>
+        <div class="metric-value" id="meta-wind">-- m/s</div>
+      </div>
+    </div>
+
+    <div class="visual-section">
+      <div class="section-title">Live Interactive Doppler Radar</div>
+      <div id="map"></div>
+    </div>
+
+    <div class="visual-section">
+      <div class="section-title">60-Minute Precipitation Timeline</div>
+      <div class="chart-container">
+        <canvas id="nowcastChart"></canvas>
+      </div>
+    </div>
   </div>
 
-  <script type="module">
-    const statusEl = document.getElementById('status');
-    const outputEl = document.getElementById('output');
-    const refreshBtn = document.getElementById('refreshBtn');
+  <script>
+    let map = null;
+    let radarLayer = null;
+    let weatherChart = null;
 
-    let currentLat, currentLon;
-
-    // 1. Get Location via GeoJS
-    async function getLocation() {
+    async function initApp() {
       try {
-        const res = await fetch('https://get.geojs.io/v1/ip/geo.json');
-        const data = await res.json();
-        currentLat = data.latitude;
-        currentLon = data.longitude;
-        statusEl.innerText = `Location: ${data.city} (${currentLat}, ${currentLon})`;
+        const geoRes = await fetch('https://get.geojs.io/v1/ip/geo.json');
+        const geoData = await geoRes.json();
+        const lat = parseFloat(geoData.latitude);
+        const lon = parseFloat(geoData.longitude);
+        
+        document.getElementById('location-text').innerText = `${geoData.city || 'Local Area'} (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
+        
+        initRadarMap(lat, lon);
+        await fetchNowcastData(lat, lon);
+
+        const refreshBtn = document.getElementById('refresh-btn');
         refreshBtn.disabled = false;
-        fetchWeather(currentLat, currentLon);
+        refreshBtn.addEventListener('click', () => fetchNowcastData(lat, lon));
+
       } catch (err) {
-        statusEl.innerText = 'Failed to get location.';
+        document.getElementById('location-text').innerText = "Geolocation matrix tracking failed.";
+        console.error(err);
       }
     }
 
-    // 2. Fetch Weather from your Netlify Function
-    async function fetchWeather(lat, lon) {
-      outputEl.innerText = "Loading minute-by-minute data...";
+    function initRadarMap(lat, lon) {
+      if (map) return;
+      
+      map = L.map('map').setView([lat, lon], 9);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+
+      L.marker([lat, lon]).addTo(map).bindPopup('Your Asset Position').openPopup();
+
+      updateRadarOverlay();
+      setInterval(updateRadarOverlay, 300000); // Auto-refresh radar images every 5 minutes
+    }
+
+    async function updateRadarOverlay() {
+      try {
+        const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+        const data = await response.json();
+        if (!data.radar || !data.radar.past.length) return;
+
+        const latestRadarPath = data.radar.past[data.radar.past.length - 1].path;
+        
+        if (radarLayer) map.removeLayer(radarLayer);
+
+        radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${latestRadarPath}/256/{z}/{x}/{y}/2/1_1.png`, {
+          opacity: 0.65,
+          attribution: 'Radar data via RainViewer'
+        }).addTo(map);
+      } catch (error) {
+        console.error("Radar matrix layer initialization aborted:", error);
+      }
+    }
+
+    async function fetchNowcastData(lat, lon) {
       try {
         const response = await fetch(`/.netlify/functions/nowcast?lat=${lat}&lon=${lon}`);
-        const result = await response.json();
-        
-        if (result.error) {
-          outputEl.innerText = `Error: ${result.error}`;
-          return;
-        }
+        const json = await response.json();
 
-        // Displaying the raw minutely array for you to hook into your charts
-        const minutelyData = result.data.timelines.minutely.slice(0, 5); // Just showing first 5 mins for preview
-        outputEl.innerText = JSON.stringify(minutelyData, null, 2);
-        
+        if (json.error) throw new Error(json.error);
+
+        const timeline = json.data.timelines.minutely;
+        renderDashboardMetrics(timeline);
       } catch (error) {
-        outputEl.innerText = "Error fetching from Netlify function.";
+        console.error("Nowcast parsing aborted:", error);
       }
     }
 
-    refreshBtn.addEventListener('click', () => {
-      if (currentLat && currentLon) fetchWeather(currentLat, currentLon);
-    });
+    function renderDashboardMetrics(timeline) {
+      const currentSnapshot = timeline[0].values;
+      
+      document.getElementById('meta-temp').innerText = `${currentSnapshot.temperature.toFixed(1)}°C`;
+      document.getElementById('meta-rain').innerText = `${currentSnapshot.rainIntensity.toFixed(2)} mm/h`;
+      document.getElementById('meta-wind').innerText = `${currentSnapshot.windSpeed.toFixed(1)} m/s`;
 
-    // Init
-    getLocation();
+      // Transform arrays into structural datasets for Chart.js parsing
+      const labels = timeline.map((entry, index) => `+${index}m`);
+      const rainDataArray = timeline.map(entry => entry.values.rainIntensity);
+
+      if (weatherChart) {
+        weatherChart.data.labels = labels;
+        weatherChart.data.datasets[0].data = rainDataArray;
+        weatherChart.update();
+      } else {
+        const ctx = document.getElementById('nowcastChart').getContext('2d');
+        weatherChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: labels,
+            datasets: [{
+              label: 'Rain Intensity (mm/h)',
+              data: rainDataArray,
+              borderColor: '#D0BCFF',
+              backgroundColor: 'rgba(208, 188, 255, 0.1)',
+              borderWidth: 2,
+              fill: true,
+              tension: 0.3,
+              pointRadius: 0
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { grid: { display: false }, ticks: { color: '#938F99', maxTicksLimit: 6 } },
+              y: { beginAtZero: true, grid: { color: '#49454F' }, ticks: { color: '#938F99' } }
+            }
+          }
+        });
+      }
+    }
+
+    window.addEventListener('DOMContentLoaded', initApp);
   </script>
 </body>
 </html>
