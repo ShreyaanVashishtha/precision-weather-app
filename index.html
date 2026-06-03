@@ -208,7 +208,7 @@
 
     async function fetchMeteorologicalData(lat, lon) {
       try {
-        const response = await fetch(`/.netlify/functions/nowcast?lat=${lat}&lon=${lon}`);
+        const response = await fetch(`/api/nowcast?lat=${lat}&lon=${lon}`);
         const data = await response.json();
         if(data.error) throw new Error(data.error);
 
