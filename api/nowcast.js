@@ -1,6 +1,7 @@
-exports.handler = async function(event, context) {
-  const lat = parseFloat(event.queryStringParameters.lat) || 22.3193;
-  const lon = parseFloat(event.queryStringParameters.lon) || 114.1694;
+export default async function handler(request, response) {
+  // Vercel automatically parses query parameters into request.query
+  const lat = parseFloat(request.query.lat) || 22.3193;
+  const lon = parseFloat(request.query.lon) || 114.1694;
 
   const tomorrowKey = process.env.TOMORROW_IO_KEY;
   // Bounding box for Hong Kong Territory
@@ -30,7 +31,7 @@ exports.handler = async function(event, context) {
       isHongKong ? safeFetch(hkoWarnUrl) : null
     ]);
 
-    if (!om) return { statusCode: 500, body: JSON.stringify({ error: "Core atmospheric network offline." }) };
+    if (!om) return response.status(500).json({ error: "Core atmospheric network offline." });
 
     // Standardize Weather Codes
     const mapCode = (code) => {
@@ -70,7 +71,6 @@ exports.handler = async function(event, context) {
       aqi: { index: 0, pm25: 0, pm10: 0, label: "Good", color: "#4ADE80" },
       warnings: [],
       cyclone: null,
-      lightning: null,
       insights: [],
       nowcast: [],
       hourly: om.hourly.time.map((t, i) => ({
@@ -109,7 +109,6 @@ exports.handler = async function(event, context) {
 
     // Overwrite with HKO Official Data if available
     if (isHongKong) {
-      // HKO Current Telemetry
       if (hkoCurrent?.temperature?.data) {
         const hkTemp = hkoCurrent.temperature.data.find(d => d.place === "Hong Kong Observatory") || hkoCurrent.temperature.data[0];
         if (hkTemp) {
@@ -119,7 +118,6 @@ exports.handler = async function(event, context) {
       }
       if (hkoCurrent?.humidity?.data?.[0]) payload.current.humidity = hkoCurrent.humidity.data[0].value;
       
-      // HKO 9-Day Forecast
       if (hkoForecast?.weatherForecast) {
         payload.meta.sources.forecast = "HKO Official 9-Day + Open-Meteo";
         payload.daily = hkoForecast.weatherForecast.map(d => {
@@ -138,12 +136,10 @@ exports.handler = async function(event, context) {
         });
       }
 
-      // HKO Warnings
       if (hkoWarn) {
         payload.meta.sources.warnings = "Hong Kong Observatory (HKO)";
         const parseWarning = (code, title, color) => ({ title, color, issued: nowTimestamp, desc: "Official signal issued by HKO. Exercise caution." });
         
-        // HKO API returns keys for active warnings
         if (hkoWarn.WFIRE) payload.warnings.push(parseWarning("WFIRE", "Fire Danger Warning", "#F59E0B"));
         if (hkoWarn.WTS) payload.warnings.push(parseWarning("WTS", "Thunderstorm Warning", "#F59E0B"));
         if (hkoWarn.WRAIN && hkoWarn.WRAIN.code === "WRAINR") payload.warnings.push(parseWarning("WRAINR", "Red Rainstorm Warning", "#EF4444"));
@@ -159,7 +155,6 @@ exports.handler = async function(event, context) {
       }
     }
 
-    // AI Weather Intelligence Engine
     const maxPop = Math.max(...payload.hourly.slice(0, 12).map(h => h.precip));
     const isRaining = payload.nowcast.some(n => n.precipInt > 0);
     
@@ -172,12 +167,11 @@ exports.handler = async function(event, context) {
     if (payload.warnings.length === 0) payload.insights.push("No severe weather signals are currently active.");
     
     payload.insights.push("Forecast Confidence: High (Multi-model convergence achieved).");
-    
-    // Natural Language Summary
     payload.summary = `Conditions are currently ${payload.current.condition.toLowerCase()} with a temperature of ${Math.round(payload.current.temp)}°C. ${maxPop > 50 ? `Showers are likely later with a ${maxPop}% probability.` : 'No significant rainfall is expected.'} UV levels remain ${payload.current.uvLabel.toLowerCase()}.`;
 
-    return { statusCode: 200, headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) };
+    // Vercel standard response
+    return response.status(200).json(payload);
   } catch (error) {
-    return { statusCode: 500, body: JSON.stringify({ error: `Backend exception: ${error.message}` }) };
+    return response.status(500).json({ error: `Backend exception: ${error.message}` });
   }
-};
+}
