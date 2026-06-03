@@ -16,7 +16,7 @@
       darkMode: 'class',
       theme: {
         extend: {
-          fontFamily: { sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'] },
+          fontFamily: { sans: ['-apple-system', 'BlinkMacSystemFont', 'Inter', 'sans-serif'] },
           colors: { background: '#07070A', accent: '#A084FF' }
         }
       }
@@ -36,13 +36,10 @@
       backdrop-filter: blur(12px);
       -webkit-backdrop-filter: blur(12px);
       border: 1px solid rgba(255, 255, 255, 0.08);
-      border-radius: 20px;
+      border-radius: 16px;
       transition: transform 0.2s ease, border-color 0.2s ease;
     }
-    
-    .apple-glass:hover {
-      border-color: rgba(255, 255, 255, 0.15);
-    }
+    .apple-glass:hover { border-color: rgba(255, 255, 255, 0.15); }
 
     /* Micro-Widget Scales */
     .gradient-scale-uv { background: linear-gradient(to right, #4ADE80, #FACC15, #F97316, #EF4444, #A855F7); }
@@ -59,8 +56,8 @@
     .forecast-item { position: relative; z-index: 1; }
 
     /* Map Customization */
-    #map { width: 100%; height: 100%; border-radius: 20px; }
-    .maplibregl-ctrl-bottom-right { display: none; } /* Hide watermark for minimal UI */
+    #map { width: 100%; height: 100%; border-radius: 16px; }
+    .maplibregl-ctrl-bottom-right { display: none; }
   </style>
 </head>
 <body class="p-4 md:p-6 min-h-screen">
@@ -70,8 +67,9 @@
     <header class="flex justify-between items-center px-1 mb-2">
       <div class="relative w-72">
         <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500"></i>
-        <input type="text" placeholder="Search for a city or airport" class="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:bg-white/10 transition-all placeholder-gray-500">
+        <input type="text" id="search-input" placeholder="Search for a city or airport" class="w-full bg-white/5 border border-white/10 rounded-xl py-2 pl-9 pr-4 text-sm text-white focus:outline-none focus:bg-white/10 transition-all placeholder-gray-500">
       </div>
+      <div class="text-xs text-gray-500 font-medium" id="sync-status">Updating telemetry...</div>
     </header>
 
     <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
@@ -80,15 +78,15 @@
         
         <div class="apple-glass p-8 flex flex-col justify-between relative overflow-hidden h-[300px]">
           <div class="absolute -top-10 -right-10 opacity-20 pointer-events-none">
-            <i data-lucide="cloud" class="w-64 h-64 text-white drop-shadow-2xl"></i>
+            <i id="hero-icon-bg" data-lucide="cloud" class="w-64 h-64 text-white drop-shadow-2xl"></i>
           </div>
           <div class="z-10">
-            <h2 class="text-3xl font-bold tracking-tight">Hong Kong</h2>
-            <p class="text-gray-400 text-lg font-medium mt-1">Overcast</p>
+            <h2 class="text-3xl font-bold tracking-tight" id="hero-location">Hong Kong</h2>
+            <p class="text-gray-400 text-lg font-medium mt-1" id="hero-condition">Overcast</p>
           </div>
           <div class="z-10 mt-auto">
-            <h1 class="text-[5rem] font-bold tracking-tighter leading-none mb-2">29°</h1>
-            <p class="text-gray-300 text-sm font-medium tracking-wide">Feels Like 33° <span class="mx-2 text-gray-600">|</span> H:30° L:23°</p>
+            <h1 class="text-[5rem] font-bold tracking-tighter leading-none mb-2" id="hero-temp">--°</h1>
+            <p class="text-gray-300 text-sm font-medium tracking-wide">Feels Like <span id="hero-feels">--°</span> <span class="mx-2 text-gray-600">|</span> H:<span id="hero-high">--°</span> L:<span id="hero-low">--°</span></p>
           </div>
         </div>
 
@@ -108,17 +106,17 @@
           <div id="map"></div>
           
           <div class="absolute bottom-4 left-4 right-4 z-10 bg-[rgba(20,20,22,0.85)] backdrop-blur-xl rounded-xl border border-white/10 p-3 flex items-center gap-4 shadow-2xl">
-            <button class="w-9 h-9 flex items-center justify-center bg-white text-black rounded-full hover:bg-gray-200 transition-colors">
-              <i data-lucide="play" class="w-4 h-4 ml-0.5"></i>
+            <button id="play-btn" class="w-9 h-9 flex items-center justify-center bg-white text-black rounded-full hover:bg-gray-200 transition-colors">
+              <i id="play-icon" data-lucide="play" class="w-4 h-4 ml-0.5"></i>
             </button>
             <div class="flex-1">
               <div class="flex justify-between text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5">
-                <span>12:00 PM</span>
-                <span class="text-white">Now</span>
-                <span>2:00 PM</span>
+                <span>Historical</span>
+                <span class="text-white" id="radar-time">Loading...</span>
+                <span>Prediction</span>
               </div>
               <div class="h-1.5 w-full bg-white/10 rounded-full overflow-hidden relative">
-                <div class="absolute top-0 left-0 h-full bg-accent w-[60%] rounded-full shadow-[0_0_8px_rgba(160,132,255,0.6)]"></div>
+                <div id="radar-progress" class="absolute top-0 left-0 h-full bg-accent w-[0%] rounded-full shadow-[0_0_8px_rgba(160,132,255,0.6)] transition-all duration-300"></div>
               </div>
             </div>
           </div>
@@ -127,91 +125,67 @@
         <div class="grid grid-cols-2 lg:grid-cols-4 gap-5">
           
           <div class="apple-glass p-4 flex flex-col justify-between min-h-[140px]">
-            <div class="flex items-center gap-1.5 text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-2">
-              <i data-lucide="sun-dim" class="w-3.5 h-3.5"></i> UV Index
-            </div>
+            <div class="flex items-center gap-1.5 text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-2"><i data-lucide="sun-dim" class="w-3.5 h-3.5"></i> UV Index</div>
             <div>
-              <div class="text-2xl font-semibold leading-none">8.9</div>
-              <div class="text-sm font-medium mt-1">Very High</div>
-              <div class="scale-bar gradient-scale-uv mt-3"><div class="scale-indicator" style="left: 80%;"></div></div>
+              <div class="text-2xl font-semibold leading-none" id="metric-uv">--</div>
+              <div class="text-sm font-medium mt-1" id="metric-uv-label">--</div>
+              <div class="scale-bar gradient-scale-uv mt-3"><div class="scale-indicator" id="uv-dot" style="left: 0%;"></div></div>
             </div>
             <div class="text-[10px] text-gray-400 mt-3 leading-snug font-medium">Expect peak intensity between 11:00 AM and 2:00 PM.</div>
           </div>
 
           <div class="apple-glass p-4 flex flex-col justify-between min-h-[140px]">
-            <div class="flex items-center gap-1.5 text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-1">
-              <i data-lucide="wind" class="w-3.5 h-3.5"></i> Wind
-            </div>
+            <div class="flex items-center gap-1.5 text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-1"><i data-lucide="wind" class="w-3.5 h-3.5"></i> Wind</div>
             <div class="flex items-center justify-center h-16 relative">
                <div class="w-14 h-14 border border-white/20 rounded-full relative bg-white/5">
                  <div class="absolute inset-0 flex items-center justify-center text-[9px] text-gray-400 font-bold">N</div>
-                 <div class="absolute top-0 bottom-0 left-1/2 w-px transform -translate-x-1/2" style="transform: rotate(90deg);">
+                 <div class="absolute top-0 bottom-0 left-1/2 w-px transform -translate-x-1/2" id="wind-dial" style="transform: rotate(0deg);">
                    <div class="w-2 h-2 bg-white rounded-full -ml-[3px] -mt-1 shadow-[0_0_4px_white]"></div>
                  </div>
                </div>
                <div class="absolute inset-0 flex flex-col items-center justify-center mt-1">
-                 <span class="text-lg font-bold leading-none shadow-black drop-shadow-md">14</span>
-                 <span class="text-[9px] text-gray-200">km/h</span>
+                 <span class="text-lg font-bold leading-none shadow-black drop-shadow-md" id="metric-wind">--</span>
+                 <span class="text-[9px] text-gray-200">m/s</span>
                </div>
             </div>
-            <div class="text-[10px] text-gray-400 mt-2 leading-snug font-medium">Steady breeze from the East.</div>
+            <div class="text-[10px] text-gray-400 mt-2 leading-snug font-medium" id="wind-insight">Steady breeze from the East.</div>
           </div>
 
           <div class="apple-glass p-4 flex flex-col justify-between min-h-[140px]">
-            <div class="flex items-center gap-1.5 text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-2">
-              <i data-lucide="leaf" class="w-3.5 h-3.5"></i> Air Quality
-            </div>
+            <div class="flex items-center gap-1.5 text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-2"><i data-lucide="leaf" class="w-3.5 h-3.5"></i> Air Quality</div>
             <div>
-              <div class="text-2xl font-semibold leading-none">60</div>
-              <div class="text-sm font-medium mt-1">Moderate</div>
-              <div class="scale-bar gradient-scale-aqi mt-3"><div class="scale-indicator" style="left: 35%;"></div></div>
+              <div class="text-2xl font-semibold leading-none" id="metric-aqi">--</div>
+              <div class="text-sm font-medium mt-1" id="metric-aqi-label">--</div>
+              <div class="scale-bar gradient-scale-aqi mt-3"><div class="scale-indicator" id="aqi-dot" style="left: 0%;"></div></div>
             </div>
             <div class="text-[10px] text-gray-400 mt-3 leading-snug font-medium">AQI is similar to yesterday at this time.</div>
           </div>
 
           <div class="apple-glass p-4 flex flex-col justify-between min-h-[140px]">
-            <div class="flex items-center gap-1.5 text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-2">
-              <i data-lucide="droplets" class="w-3.5 h-3.5"></i> Humidity
-            </div>
-            <div class="text-4xl font-semibold tracking-tight mt-1">82%</div>
-            <div class="text-[10px] text-gray-400 mt-auto leading-snug font-medium">The dew point is 26° right now.</div>
+            <div class="flex items-center gap-1.5 text-gray-400 text-[10px] font-semibold uppercase tracking-wider mb-2"><i data-lucide="droplets" class="w-3.5 h-3.5"></i> Humidity</div>
+            <div class="text-4xl font-semibold tracking-tight mt-1" id="metric-hum">--%</div>
+            <div class="text-[10px] text-gray-400 mt-auto leading-snug font-medium" id="hum-insight">The dew point is --° right now.</div>
           </div>
 
         </div>
 
-        <div class="apple-glass p-5 relative">
-          <div class="flex items-center gap-2 text-gray-400 text-[11px] font-semibold uppercase tracking-wider mb-4">
-            <i data-lucide="clock-4" class="w-3.5 h-3.5"></i> 24-Hour Micro Forecast
-          </div>
-          
-          <div class="relative w-full h-32 overflow-x-auto no-scrollbar" id="hourly-scroll-container">
+        <div class="apple-glass p-5 relative overflow-hidden">
+          <div class="flex items-center gap-2 text-gray-400 text-[11px] font-semibold uppercase tracking-wider mb-4"><i data-lucide="clock-4" class="w-3.5 h-3.5"></i> 24-Hour Micro Forecast</div>
+          <div class="relative w-full h-[100px] overflow-x-auto no-scrollbar" id="hourly-scroll-container">
              <svg id="svg-curve-container" preserveAspectRatio="none"></svg>
-             
-             <div class="flex absolute top-0 left-0 h-full w-max px-2" id="hourly-data-container">
-               </div>
+             <div class="flex absolute top-0 left-0 h-full w-max px-2" id="hourly-data-container"></div>
           </div>
         </div>
 
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          
           <div class="apple-glass p-5">
-            <div class="flex items-center gap-2 text-gray-400 text-[11px] font-semibold uppercase tracking-wider mb-4">
-              <i data-lucide="cloud-rain" class="w-3.5 h-3.5"></i> 120-Min Precipitation
-            </div>
-            <div class="h-[140px] w-full relative">
-              <canvas id="precipChart"></canvas>
-            </div>
+            <div class="flex items-center gap-2 text-gray-400 text-[11px] font-semibold uppercase tracking-wider mb-4"><i data-lucide="cloud-rain" class="w-3.5 h-3.5"></i> 120-Min Precipitation</div>
+            <div class="h-[140px] w-full relative"><canvas id="precipChart"></canvas></div>
           </div>
-
           <div class="apple-glass p-5">
-            <div class="flex items-center gap-2 text-gray-400 text-[11px] font-semibold uppercase tracking-wider mb-4">
-              <i data-lucide="bar-chart-2" class="w-3.5 h-3.5"></i> 24-Hr Analytics
-            </div>
-            <div class="h-[140px] w-full relative">
-              <canvas id="analyticsChart"></canvas>
-            </div>
+            <div class="flex items-center gap-2 text-gray-400 text-[11px] font-semibold uppercase tracking-wider mb-4"><i data-lucide="bar-chart-2" class="w-3.5 h-3.5"></i> 24-Hr Analytics</div>
+            <div class="h-[140px] w-full relative"><canvas id="analyticsChart"></canvas></div>
           </div>
-
         </div>
 
       </div>
@@ -221,224 +195,264 @@
   <script>
     lucide.createIcons();
 
-    // 1. MapLibre GL Integration (Robust Dark Mode Vector/Raster Map)
+    // 1. MapLibre GL Integration (Vector base with Raster Radar overlay)
     const map = new maplibregl.Map({
       container: 'map',
       style: {
         version: 8,
-        sources: {
-          'carto-dark': {
-            type: 'raster',
-            tiles: ['https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'],
-            tileSize: 256,
-            attribution: '© OpenStreetMap © CARTO'
-          }
-        },
-        layers: [{
-          id: 'dark-layer', type: 'raster', source: 'carto-dark',
-          paint: { 'raster-opacity': 0.8 }
-        }]
+        sources: { 'carto-dark': { type: 'raster', tiles: ['https://a.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap © CARTO' } },
+        layers: [{ id: 'dark-layer', type: 'raster', source: 'carto-dark', paint: { 'raster-opacity': 0.8 } }]
       },
-      center: [114.1694, 22.3193], // Hong Kong
-      zoom: 9.5,
-      interactive: false // Lock map interactions for clean dashboard feel
+      center: [114.1694, 22.3193],
+      zoom: 9.5, interactive: false
     });
 
-    // Add mock Rainviewer radar source to avoid zoom errors
-    map.on('load', () => {
-      map.addSource('radar', {
-        type: 'raster',
-        tiles: ['https://tilecache.rainviewer.com/v2/radar/1715000000/256/{z}/{x}/{y}/2/1_1.png'], // Mock past timestamp
-        tileSize: 256,
-        maxzoom: 12 // Strictly bounds requests to prevent 404/Unsupported zoom tiles
-      });
-      map.addLayer({ id: 'radar-layer', type: 'raster', source: 'radar', paint: { 'raster-opacity': 0.6 } });
+    let radarFrames = [], currentFrameIndex = 0, radarInterval = null, isPlaying = false;
+
+    map.on('load', async () => {
+      try {
+        const res = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+        const data = await res.json();
+        radarFrames = data.radar.past || [];
+        
+        if (radarFrames.length > 0) {
+          // Initialize source with strict maxzoom to prevent "Not Supported" errors via interpolation
+          map.addSource('radar', {
+            type: 'raster',
+            tiles: [`https://tilecache.rainviewer.com${radarFrames[0].path}/256/{z}/{x}/{y}/2/1_1.png`],
+            tileSize: 256,
+            maxzoom: 12 
+          });
+          map.addLayer({ id: 'radar-layer', type: 'raster', source: 'radar', paint: { 'raster-opacity': 0.7 } });
+          updateRadarFrame(radarFrames.length - 1);
+        }
+      } catch(e) { console.error("Radar load failed", e); }
     });
 
-    // 2. 9-Day Outlook (Relative Range Bars)
-    const mock9Day = [
-      { day: 'Today', icon: 'cloud', min: 23, max: 30 },
-      { day: 'Thu', icon: 'cloud-lightning', min: 25, max: 31 },
-      { day: 'Fri', icon: 'cloud-rain', min: 26, max: 32 },
-      { day: 'Sat', icon: 'sun', min: 27, max: 34 },
-      { day: 'Sun', icon: 'cloud-sun', min: 26, max: 33 },
-      { day: 'Mon', icon: 'cloud-drizzle', min: 24, max: 29 },
-      { day: 'Tue', icon: 'cloud', min: 23, max: 28 },
-      { day: 'Wed', icon: 'sun', min: 24, max: 30 },
-      { day: 'Thu', icon: 'sun', min: 25, max: 31 },
-    ];
+    function updateRadarFrame(index) {
+      currentFrameIndex = index;
+      const frame = radarFrames[index];
+      const date = new Date(frame.time * 1000);
+      document.getElementById('radar-time').innerText = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      document.getElementById('radar-progress').style.width = `${((index + 1) / radarFrames.length) * 100}%`;
 
-    // Find absolute bounds for the week's x-axis
-    const absMin = Math.min(...mock9Day.map(d => d.min));
-    const absMax = Math.max(...mock9Day.map(d => d.max));
-    const totalRange = absMax - absMin;
+      if (map.getSource('radar')) {
+        map.getSource('radar').setTiles([`https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`]);
+      }
+    }
 
-    const html9Day = mock9Day.map(d => {
-      const leftPercent = ((d.min - absMin) / totalRange) * 100;
-      const widthPercent = ((d.max - d.min) / totalRange) * 100;
-      
-      // Dynamic Apple-style gradient mapped to temps
-      let gradient = 'from-blue-400 to-green-400';
-      if (d.max > 28) gradient = 'from-green-400 to-yellow-400';
-      if (d.max > 32) gradient = 'from-yellow-400 to-orange-500';
-
-      return `
-        <div class="flex items-center gap-3 text-sm font-medium">
-          <span class="w-10 text-white font-semibold">${d.day}</span>
-          <i data-lucide="${d.icon}" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
-          <span class="w-6 text-right text-gray-400/80 font-semibold">${d.min}°</span>
-          
-          <div class="flex-1 h-1.5 bg-black/40 rounded-full relative overflow-hidden">
-            <div class="absolute top-0 bottom-0 rounded-full bg-gradient-to-r ${gradient}" 
-                 style="left: ${leftPercent}%; width: ${widthPercent}%;"></div>
-          </div>
-          
-          <span class="w-6 text-right text-white font-bold">${d.max}°</span>
-        </div>
-      `;
-    }).join('');
-    
-    document.getElementById('9day-container').innerHTML = html9Day;
-
-
-    // 3. 24-Hour Micro Forecast (Inline SVG Continuous Curve)
-    const mockHourly = Array.from({length: 24}, (_, i) => ({
-      time: i === 0 ? 'Now' : `${(i+12)%12||12} ${i<12?'AM':'PM'}`,
-      temp: Math.round(27 + Math.sin(i/3.5) * 4),
-      icon: Math.sin(i/3.5) > 0.5 ? 'sun' : 'cloud'
-    }));
-
-    const hourWidth = 55; // Pixels per hour block
-    const svgHeight = 128; // Container height
-    const tempPaddingTop = 75; // Space for Icon + Time
-    const tempPaddingBottom = 25; 
-    
-    const maxTemp = Math.max(...mockHourly.map(h => h.temp));
-    const minTemp = Math.min(...mockHourly.map(h => h.temp));
-    const tempRange = maxTemp - minTemp;
-
-    // Build the flex items
-    const htmlHourly = mockHourly.map(h => `
-      <div class="forecast-item flex flex-col items-center justify-between h-full" style="width: ${hourWidth}px; flex-shrink: 0;">
-        <div class="flex flex-col items-center gap-2 mt-2">
-          <span class="text-[11px] font-semibold text-gray-300">${h.time}</span>
-          <i data-lucide="${h.icon}" class="w-5 h-5 text-white drop-shadow-md"></i>
-        </div>
-        <span class="text-[15px] font-bold text-white mb-2 drop-shadow-md">${h.temp}°</span>
-      </div>
-    `).join('');
-    document.getElementById('hourly-data-container').innerHTML = htmlHourly;
-
-    // Generate the SVG Path
-    let svgPath = '';
-    mockHourly.forEach((h, index) => {
-      const x = (index * hourWidth) + (hourWidth / 2);
-      // Map temperature to Y coordinate (inverted because Y grows downwards)
-      const normalizedY = 1 - ((h.temp - minTemp) / tempRange);
-      const y = tempPaddingTop + (normalizedY * (svgHeight - tempPaddingTop - tempPaddingBottom));
-      
-      if (index === 0) svgPath += `M ${x} ${y} `;
-      else {
-        // Smooth bezier curves
-        const prevX = ((index - 1) * hourWidth) + (hourWidth / 2);
-        const prevNormalizedY = 1 - ((mockHourly[index-1].temp - minTemp) / tempRange);
-        const prevY = tempPaddingTop + (prevNormalizedY * (svgHeight - tempPaddingTop - tempPaddingBottom));
-        const cpX = (prevX + x) / 2;
-        svgPath += `C ${cpX} ${prevY}, ${cpX} ${y}, ${x} ${y} `;
+    document.getElementById('play-btn').addEventListener('click', () => {
+      const icon = document.getElementById('play-icon');
+      if (isPlaying) {
+        isPlaying = false; icon.setAttribute('data-lucide', 'play'); lucide.createIcons();
+        clearInterval(radarInterval);
+      } else {
+        isPlaying = true; icon.setAttribute('data-lucide', 'pause'); lucide.createIcons();
+        radarInterval = setInterval(() => {
+          updateRadarFrame((currentFrameIndex + 1) % radarFrames.length);
+        }, 600);
       }
     });
 
-    const totalWidth = mockHourly.length * hourWidth;
-    document.getElementById('svg-curve-container').setAttribute('viewBox', `0 0 ${totalWidth} ${svgHeight}`);
-    document.getElementById('svg-curve-container').style.width = `${totalWidth}px`;
-    document.getElementById('svg-curve-container').innerHTML = `
-      <path d="${svgPath}" fill="none" stroke="rgba(160, 132, 255, 0.6)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-    `;
+    // 2. Fetch Data & Build UI
+    async function initApp() {
+      // For Vercel, this hooks straight into the API built previously
+      // document.getElementById('search-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchMeteorologicalData(e.target.value); });
+      fetchMeteorologicalData(); 
+    }
 
+    async function fetchMeteorologicalData(query = "Hong Kong") {
+      document.getElementById('sync-status').innerText = "Syncing with Vercel API...";
+      
+      try {
+        // Fallback geocoding logic if query isn't HK (omitted for brevity, assume lat/lon derived)
+        const lat = 22.3193, lon = 114.1694; 
+        const response = await fetch(`/api/nowcast?lat=${lat}&lon=${lon}`);
+        const data = await response.json();
+        
+        if (data.error) throw new Error(data.error);
 
-    // 4. Custom Chart.js Plugin for Vertical Crosshair on Hover
-    const verticalCrosshairPlugin = {
-      id: 'verticalCrosshair',
+        // Populate Hero & Insights
+        document.getElementById('hero-temp').innerText = `${Math.round(data.current.temp)}°`;
+        document.getElementById('hero-feels').innerText = Math.round(data.current.feelsLike);
+        document.getElementById('hero-high').innerText = Math.round(data.current.high);
+        document.getElementById('hero-low').innerText = Math.round(data.current.low);
+        document.getElementById('hero-condition').innerText = data.current.condition;
+        document.getElementById('hero-icon-bg').setAttribute('data-lucide', data.current.icon);
+        
+        // Populate Widgets
+        document.getElementById('metric-hum').innerText = `${Math.round(data.current.humidity)}%`;
+        document.getElementById('hum-insight').innerText = `The dew point is ${Math.round(data.current.dewPoint)}° right now.`;
+        
+        document.getElementById('metric-wind').innerText = data.current.windSpeed.toFixed(1);
+        document.getElementById('wind-insight').innerText = data.current.windGust > 10 ? `Gusty winds detected up to ${Math.round(data.current.windGust)} m/s.` : "Steady breeze from the East.";
+        document.getElementById('wind-dial').style.transform = `rotate(${Math.random() * 360}deg)`; // Mock direction
+        
+        document.getElementById('metric-uv').innerText = data.current.uvIndex;
+        document.getElementById('metric-uv-label').innerText = data.current.uvLabel;
+        document.getElementById('uv-dot').style.left = `${Math.min((data.current.uvIndex / 11) * 100, 100)}%`;
+        
+        document.getElementById('metric-aqi').innerText = data.aqi.index;
+        document.getElementById('metric-aqi-label').innerText = data.aqi.label;
+        document.getElementById('aqi-dot').style.left = `${Math.min((data.aqi.index / 200) * 100, 100)}%`;
+
+        build9DayOutlook(data.daily);
+        buildHourlyForecast(data.hourly);
+        buildCharts(data);
+        
+        lucide.createIcons();
+        document.getElementById('sync-status').innerText = data.meta.timestamp;
+      } catch (err) {
+        console.error(err);
+        document.getElementById('sync-status').innerText = "System Offline";
+      }
+    }
+
+    function build9DayOutlook(daily) {
+      const forecast = daily.slice(0, 9);
+      const absMin = Math.min(...forecast.map(d => d.low));
+      const absMax = Math.max(...forecast.map(d => d.high));
+      const totalRange = absMax - absMin;
+
+      const html = forecast.map((d, i) => {
+        const leftPercent = ((d.low - absMin) / totalRange) * 100;
+        const widthPercent = ((d.high - d.low) / totalRange) * 100;
+        
+        let gradient = 'from-[#38BDF8] to-[#4ADE80]';
+        if (d.high > 28) gradient = 'from-[#4ADE80] to-[#FACC15]';
+        if (d.high > 32) gradient = 'from-[#FACC15] to-[#F97316]';
+
+        return `
+          <div class="flex items-center gap-3 text-sm font-medium">
+            <span class="w-12 text-white font-semibold">${i === 0 ? 'Today' : d.date.split(' ')[0]}</span>
+            <i data-lucide="${d.icon}" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
+            <span class="w-6 text-right text-gray-400/80 font-semibold">${Math.round(d.low)}°</span>
+            <div class="flex-1 h-1 bg-black/40 rounded-full relative overflow-hidden">
+              <div class="absolute top-0 bottom-0 rounded-full bg-gradient-to-r ${gradient}" style="left: ${leftPercent}%; width: ${widthPercent}%;"></div>
+            </div>
+            <span class="w-6 text-right text-white font-bold">${Math.round(d.high)}°</span>
+          </div>
+        `;
+      }).join('');
+      document.getElementById('9day-container').innerHTML = html;
+    }
+
+    function buildHourlyForecast(hourly) {
+      const mockHourly = hourly.slice(0, 24);
+      const hourWidth = 55;
+      const svgHeight = 100;
+      const pt = 50, pb = 20; 
+      
+      const maxTemp = Math.max(...mockHourly.map(h => h.temp));
+      const minTemp = Math.min(...mockHourly.map(h => h.temp));
+      const tempRange = maxTemp - minTemp;
+
+      const html = mockHourly.map(h => `
+        <div class="forecast-item flex flex-col items-center justify-between h-full" style="width: ${hourWidth}px; flex-shrink: 0;">
+          <div class="flex flex-col items-center gap-1.5 mt-1">
+            <span class="text-[11px] font-semibold text-gray-300">${h.time.split(' ')[0]}</span>
+            <i data-lucide="${h.icon}" class="w-4 h-4 text-white drop-shadow-md"></i>
+          </div>
+          <span class="text-[14px] font-bold text-white mb-1 drop-shadow-md">${Math.round(h.temp)}°</span>
+        </div>
+      `).join('');
+      document.getElementById('hourly-data-container').innerHTML = html;
+
+      let svgPath = '';
+      mockHourly.forEach((h, index) => {
+        const x = (index * hourWidth) + (hourWidth / 2);
+        const normY = tempRange === 0 ? 0.5 : 1 - ((h.temp - minTemp) / tempRange);
+        const y = pt + (normY * (svgHeight - pt - pb));
+        
+        if (index === 0) svgPath += `M ${x} ${y} `;
+        else {
+          const prevX = ((index - 1) * hourWidth) + (hourWidth / 2);
+          const prevNormY = tempRange === 0 ? 0.5 : 1 - ((mockHourly[index-1].temp - minTemp) / tempRange);
+          const prevY = pt + (prevNormY * (svgHeight - pt - pb));
+          const cpX = (prevX + x) / 2;
+          svgPath += `C ${cpX} ${prevY}, ${cpX} ${y}, ${x} ${y} `;
+        }
+      });
+
+      const totalWidth = mockHourly.length * hourWidth;
+      const svg = document.getElementById('svg-curve-container');
+      svg.setAttribute('viewBox', `0 0 ${totalWidth} ${svgHeight}`);
+      svg.style.width = `${totalWidth}px`;
+      svg.innerHTML = `<path d="${svgPath}" fill="none" stroke="rgba(160, 132, 255, 0.7)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+    }
+
+    // Chart.js Crosshair Plugin
+    const crosshairPlugin = {
+      id: 'crosshair',
       afterDraw: chart => {
-        if (chart.tooltip._active && chart.tooltip._active.length) {
-          const activePoint = chart.tooltip._active[0];
+        if (chart.tooltip?._active?.length) {
+          const x = chart.tooltip._active[0].element.x;
+          const { top, bottom } = chart.scales.y;
           const ctx = chart.ctx;
-          const x = activePoint.element.x;
-          const topY = chart.scales.y.top;
-          const bottomY = chart.scales.y.bottom;
-
           ctx.save();
           ctx.beginPath();
-          ctx.moveTo(x, topY);
-          ctx.lineTo(x, bottomY);
+          ctx.moveTo(x, top);
+          ctx.lineTo(x, bottom);
           ctx.lineWidth = 1;
-          ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+          ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)';
           ctx.stroke();
           ctx.restore();
         }
       }
     };
-    Chart.register(verticalCrosshairPlugin);
+    Chart.register(crosshairPlugin);
 
-    // 5. 120-Min Precipitation Chart
-    const ctxPrecip = document.getElementById('precipChart').getContext('2d');
-    const gradPrecip = ctxPrecip.createLinearGradient(0, 0, 0, 140);
-    gradPrecip.addColorStop(0, 'rgba(56, 189, 248, 0.9)'); 
-    gradPrecip.addColorStop(1, 'rgba(56, 189, 248, 0.1)');
+    let pChart, aChart;
+    function buildCharts(data) {
+      const ctxPrecip = document.getElementById('precipChart').getContext('2d');
+      const gradPrecip = ctxPrecip.createLinearGradient(0, 0, 0, 140);
+      gradPrecip.addColorStop(0, 'rgba(56, 189, 248, 0.9)'); gradPrecip.addColorStop(1, 'rgba(56, 189, 248, 0.1)');
 
-    new Chart(ctxPrecip, {
-      type: 'bar',
-      data: {
-        labels: Array.from({length: 12}, (_, i) => `+${i*10}m`),
-        datasets: [{ data: [0, 0.2, 1.4, 4.2, 3.8, 2.1, 1.0, 0.5, 0.1, 0, 0, 0], backgroundColor: gradPrecip, borderRadius: 2, borderSkipped: false }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: { 
-          legend: { display: false },
-          tooltip: {
-            backgroundColor: 'rgba(20, 20, 22, 0.95)', titleColor: '#38BDF8', bodyColor: '#FFFFFF',
-            borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10,
-            callbacks: {
-              label: (context) => {
-                let val = context.raw;
-                let intensity = val > 3 ? 'Heavy Rain' : val > 1 ? 'Medium Rain' : 'Light Rain';
-                return val > 0 ? `${intensity} (${val} mm/hr)` : 'No Precipitation';
-              }
+      // Map nowcast payload
+      const precipData = data.nowcast.slice(0, 8).map(n => n.precipInt);
+      const precipLabels = data.nowcast.slice(0, 8).map(n => n.label);
+
+      if(pChart) pChart.destroy();
+      pChart = new Chart(ctxPrecip, {
+        type: 'bar',
+        data: { labels: precipLabels, datasets: [{ data: precipData, backgroundColor: gradPrecip, borderRadius: 2 }] },
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: { 
+            legend: { display: false },
+            tooltip: {
+              backgroundColor: 'rgba(20, 20, 22, 0.95)', titleColor: '#38BDF8', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10,
+              callbacks: { label: (c) => `${c.label}: ${c.raw > 3 ? 'Heavy' : c.raw > 1 ? 'Medium' : 'Light'} Rain (${c.raw} mm/hr)` }
             }
+          },
+          scales: {
+            x: { grid: { display: false }, ticks: { color: '#8E8E93', font: {size: 9} } },
+            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8E8E93', font: {size: 9}, callback: v => v===4?'Heavy':v===2?'Medium':v===0?'None':'' }, max: 5 }
           }
-        },
-        scales: {
-          x: { grid: { display: false }, ticks: { color: '#8E8E93', font: {size: 9} } },
-          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8E8E93', font: {size: 9}, callback: v => v===4?'Heavy':v===2?'Medium':v===0?'None':'' }, max: 5 }
         }
-      }
-    });
+      });
 
-    // 6. 24-Hr Analytics Chart
-    const ctxAn = document.getElementById('analyticsChart').getContext('2d');
-    new Chart(ctxAn, {
-      type: 'line',
-      data: {
-        labels: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
-        datasets: [{ data: [25, 24, 23, 27, 30, 31, 28, 26], borderColor: '#A084FF', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 6, pointHoverBackgroundColor: '#FFFFFF', tension: 0.4 }]
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: 'index', intersect: false },
-        plugins: { 
-          legend: { display: false },
-          tooltip: { backgroundColor: 'rgba(20, 20, 22, 0.95)', titleColor: '#A084FF', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10 }
+      const ctxAn = document.getElementById('analyticsChart').getContext('2d');
+      if(aChart) aChart.destroy();
+      aChart = new Chart(ctxAn, {
+        type: 'line',
+        data: {
+          labels: data.hourly.slice(0, 8).map(h => h.time.split(' ')[0]),
+          datasets: [{ data: data.hourly.slice(0, 8).map(h => h.temp), borderColor: '#A084FF', borderWidth: 2.5, pointRadius: 0, pointHoverRadius: 6, pointHoverBackgroundColor: '#FFFFFF', tension: 0.4 }]
         },
-        scales: {
-          x: { grid: { color: 'rgba(255,255,255,0.05)', drawOnChartArea: true }, ticks: { color: '#8E8E93', font: {size: 10} } },
-          y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8E8E93', font: {size: 10} } }
+        options: {
+          responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+          plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(20, 20, 22, 0.95)', titleColor: '#A084FF', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1, padding: 10 } },
+          scales: {
+            x: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8E8E93', font: {size: 10} } },
+            y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#8E8E93', font: {size: 10} } }
+          }
         }
-      }
-    });
+      });
+    }
 
-    lucide.createIcons();
+    // Boot
+    window.addEventListener('DOMContentLoaded', initApp);
   </script>
 </body>
 </html>
