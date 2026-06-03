@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Hyper-Precise Nowcast Dashboard</title>
+  <title>Precision Analytics Weather Station</title>
   
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
   <script type="importmap">
@@ -40,7 +40,7 @@
 
     .container {
       width: 100%;
-      max-width: 800px;
+      max-width: 900px;
       display: flex;
       flex-direction: column;
       gap: 1.5rem;
@@ -71,19 +71,19 @@
 
     .metrics-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
       gap: 1rem;
     }
 
     .metric-card {
       background: var(--md-sys-color-surface);
-      padding: 1.2rem;
+      padding: 1rem;
       border-radius: 16px;
       text-align: center;
     }
 
-    .metric-value { font-size: 1.8rem; font-weight: 700; margin-top: 0.5rem; color: #D0BCFF; }
-    .metric-label { font-size: 0.8rem; color: #938F99; text-transform: uppercase; }
+    .metric-value { font-size: 1.4rem; font-weight: 700; margin-top: 0.4rem; color: #D0BCFF; }
+    .metric-label { font-size: 0.75rem; color: #938F99; text-transform: uppercase; letter-spacing: 0.5px; }
 
     .visual-section {
       background: var(--md-sys-color-surface);
@@ -116,7 +116,7 @@
 
     .chart-container {
       position: relative;
-      height: 250px;
+      height: 260px;
       width: 100%;
     }
 
@@ -141,7 +141,7 @@
   <div class="container">
     <div class="header-card">
       <div>
-        <h1>Precision Nowcast Dashboard</h1>
+        <h1>Precision Analytics Weather Station</h1>
         <div id="location-text" class="status-sub">Tracking current baseline vector...</div>
       </div>
       <div class="search-row">
@@ -152,7 +152,7 @@
 
     <div class="metrics-grid">
       <div class="metric-card">
-        <div class="metric-label">Temperature</div>
+        <div class="metric-label">Temp</div>
         <div class="metric-value" id="meta-temp">--°C</div>
       </div>
       <div class="metric-card">
@@ -162,6 +162,18 @@
       <div class="metric-card">
         <div class="metric-label">Wind Velocity</div>
         <div class="metric-value" id="meta-wind">-- m/s</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Humidity</div>
+        <div class="metric-value" id="meta-humidity">--%</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">UV Index</div>
+        <div class="metric-value" id="meta-uv">--</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">Barometer</div>
+        <div class="metric-value" id="meta-pressure">-- hPa</div>
       </div>
     </div>
 
@@ -177,8 +189,16 @@
     </div>
 
     <div class="visual-section">
+      <h2 class="section-title">24-Hour Atmospheric Trends (Combined Matrix)</h2>
+      <p style="margin-bottom: 1rem; color: #938F99; font-size: 0.9rem;">Temperature profile overlaying probability curves</p>
+      <div class="chart-container">
+        <canvas id="macroHourlyChart"></canvas>
+      </div>
+    </div>
+
+    <div class="visual-section">
       <h2 class="section-title">60-Minute Predictive Timeline Data</h2>
-      <p style="margin-bottom: 1rem; color: #938F99; font-size: 0.9rem;">Select observation matrix metric layer:</p>
+      <p style="margin-bottom: 1rem; color: #938F99; font-size: 0.9rem;">Select high-frequency observation matrix metric layer:</p>
       <div class="chip-container">
         <md-filter-chip selected id="chip-rain" label="Precipitation"></md-filter-chip>
         <md-filter-chip id="chip-temp" label="Temperature"></md-filter-chip>
@@ -195,7 +215,10 @@
     let map = null;
     let radarLayer = null;
     let weatherChart = null;
+    let hourlyChart = null;
     let rawTimelineData = [];
+    let rawHourlyData = [];
+    
     let activeMetricKey = 'rainIntensity';
     let activeMetricLabel = 'Precipitation Intensity (mm/h)';
     
@@ -219,10 +242,10 @@
         const geoData = await geoRes.json();
         const lat = parseFloat(geoData.latitude);
         const lon = parseFloat(geoData.longitude);
-        document.getElementById('query-input').value = geoData.city || "New York";
+        document.getElementById('query-input').value = geoData.city || "Hong Kong";
         triggerUpdateSequence(lat, lon, geoData.city || "Local Tracking Station");
       } catch (err) {
-        triggerUpdateSequence(22.3193, 114.1694, "Hong Kong"); // Defaulting to HK on failure
+        triggerUpdateSequence(22.3193, 114.1694, "Hong Kong"); 
       }
     }
 
@@ -289,7 +312,6 @@
       const frame = radarFrames[index];
       
       const dateString = new Date(frame.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      // RainViewer usually provides 3 predictive frames in the array
       const isForecast = index >= (radarFrames.length - 3) ? " (FCST)" : ""; 
       document.getElementById('radar-time').innerText = `${dateString}${isForecast}`;
 
@@ -297,9 +319,9 @@
 
       radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
         opacity: 0.65,
-        maxNativeZoom: 10, // Locks resolution fetching to prevent "Not Supported" boxes
-        maxZoom: 18,       // Allows deep visual stretching
-        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' // Transparent fallback
+        maxNativeZoom: 10, 
+        maxZoom: 18,       
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
       }).addTo(map);
     }
 
@@ -329,8 +351,11 @@
         const json = await response.json();
         if (json.error) throw new Error(json.error);
 
-        rawTimelineData = json.data.timelines.minutely;
+        rawTimelineData = json.data.timelines.minutely || [];
+        rawHourlyData = json.data.timelines.hourly || [];
+        
         updateUIElements();
+        buildOrUpdateHourlyChart();
       } catch (error) {
         console.error("Nowcast channel link failure:", error);
       }
@@ -343,6 +368,9 @@
       document.getElementById('meta-temp').innerText = `${baselineSnapshot.temperature.toFixed(1)}°C`;
       document.getElementById('meta-rain').innerText = `${baselineSnapshot.rainIntensity.toFixed(2)} mm/h`;
       document.getElementById('meta-wind').innerText = `${baselineSnapshot.windSpeed.toFixed(1)} m/s`;
+      document.getElementById('meta-humidity').innerText = `${Math.round(baselineSnapshot.humidity)}%`;
+      document.getElementById('meta-uv').innerText = baselineSnapshot.uvIndex ?? 0;
+      document.getElementById('meta-pressure').innerText = `${Math.round(baselineSnapshot.pressureSurfaceLevel)} hPa`;
 
       const labels = rawTimelineData.map((_, index) => `+${index}m`);
       const extractionDataset = rawTimelineData.map(entry => entry.values[activeMetricKey] ?? 0);
@@ -376,6 +404,81 @@
             scales: {
               x: { grid: { display: false }, ticks: { color: '#938F99', maxTicksLimit: 6 } },
               y: { beginAtZero: true, grid: { color: '#49454F' }, ticks: { color: '#938F99' } }
+            }
+          }
+        });
+      }
+    }
+
+    function buildOrUpdateHourlyChart() {
+      if (!rawHourlyData || rawHourlyData.length === 0) return;
+
+      const structuralWindow = rawHourlyData.slice(0, 24);
+      
+      const labels = structuralWindow.map(entry => {
+        return new Date(entry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      });
+      
+      const tempDataset = structuralWindow.map(entry => entry.values.temperature);
+      const precipProbabilityDataset = structuralWindow.map(entry => entry.values.precipitationProbability ?? 0);
+
+      if (hourlyChart) {
+        hourlyChart.data.labels = labels;
+        hourlyChart.data.datasets[0].data = tempDataset;
+        hourlyChart.data.datasets[1].data = precipProbabilityDataset;
+        hourlyChart.update();
+      } else {
+        const ctx = document.getElementById('macroHourlyChart').getContext('2d');
+        hourlyChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                type: 'line',
+                label: 'Temperature (°C)',
+                data: tempDataset,
+                borderColor: '#D0BCFF',
+                borderWidth: 2.5,
+                yAxisID: 'y-temp',
+                tension: 0.3,
+                pointRadius: 1,
+                fill: false
+              },
+              {
+                type: 'bar',
+                label: 'Precipitation Probability (%)',
+                data: precipProbabilityDataset,
+                backgroundColor: 'rgba(103, 80, 164, 0.4)',
+                borderColor: '#6750A4',
+                borderWidth: 1,
+                yAxisID: 'y-precip',
+                barPercentage: 0.6
+              }
+            ]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#E6E1E5' } } },
+            scales: {
+              x: { grid: { display: false }, ticks: { color: '#938F99', maxTicksLimit: 8 } },
+              'y-temp': {
+                type: 'linear',
+                position: 'left',
+                grid: { color: '#49454F' },
+                ticks: { color: '#D0BCFF' },
+                title: { display: true, text: 'Temperature (°C)', color: '#D0BCFF' }
+              },
+              'y-precip': {
+                type: 'linear',
+                position: 'right',
+                min: 0,
+                max: 100,
+                grid: { display: false },
+                ticks: { color: '#938F99' },
+                title: { display: true, text: 'Precipitation %', color: '#938F99' }
+              }
             }
           }
         });
