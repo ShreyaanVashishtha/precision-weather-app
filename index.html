@@ -310,30 +310,41 @@
 
     function build9DayOutlook(daily) {
       const forecast = daily.slice(0, 9);
-      const absMin = Math.min(...forecast.map(d => d.low));
-      const absMax = Math.max(...forecast.map(d => d.high));
-      const totalRange = absMax - absMin;
+      
+      // 1. Safely cast to numbers in case the API returns string values
+      const absMin = Math.min(...forecast.map(d => Number(d.low)));
+      const absMax = Math.max(...forecast.map(d => Number(d.high)));
+      
+      // 2. Prevent division by zero if temps are entirely flat for the week
+      const totalRange = (absMax - absMin) || 1;
 
       const html = forecast.map((d, i) => {
-        const leftPercent = ((d.low - absMin) / totalRange) * 100;
-        const widthPercent = ((d.high - d.low) / totalRange) * 100;
+        const leftPercent = ((Number(d.low) - absMin) / totalRange) * 100;
         
-        let gradient = 'from-[#38BDF8] to-[#4ADE80]';
-        if (d.high > 28) gradient = 'from-[#4ADE80] to-[#FACC15]';
-        if (d.high > 32) gradient = 'from-[#FACC15] to-[#F97316]';
+        // Ensure at least a 4% width so the bar is always visible, even if high == low
+        const widthPercent = Math.max(((Number(d.high) - Number(d.low)) / totalRange) * 100, 4);
+        
+        // 3. Use raw hex codes for inline styles to bypass Tailwind CDN injection bugs
+        let gradStart = '#38BDF8', gradEnd = '#4ADE80'; // Cool (Blue to Green)
+        if (d.high >= 29) { gradStart = '#4ADE80'; gradEnd = '#FACC15'; } // Warm (Green to Yellow)
+        if (d.high >= 32) { gradStart = '#FACC15'; gradEnd = '#F97316'; } // Hot (Yellow to Orange)
 
         return `
           <div class="flex items-center gap-3 text-sm font-medium">
             <span class="w-12 text-white font-semibold">${i === 0 ? 'Today' : d.date.split(' ')[0]}</span>
             <i data-lucide="${d.icon}" class="w-5 h-5 text-gray-400 flex-shrink-0"></i>
             <span class="w-6 text-right text-gray-400/80 font-semibold">${Math.round(d.low)}°</span>
-            <div class="flex-1 h-1 bg-black/40 rounded-full relative overflow-hidden">
-              <div class="absolute top-0 bottom-0 rounded-full bg-gradient-to-r ${gradient}" style="left: ${leftPercent}%; width: ${widthPercent}%;"></div>
+            
+            <div class="flex-1 h-1.5 bg-black/40 rounded-full relative overflow-hidden">
+              <div class="absolute top-0 bottom-0 rounded-full" 
+                   style="left: ${leftPercent}%; width: ${widthPercent}%; background: linear-gradient(to right, ${gradStart}, ${gradEnd});"></div>
             </div>
+            
             <span class="w-6 text-right text-white font-bold">${Math.round(d.high)}°</span>
           </div>
         `;
       }).join('');
+      
       document.getElementById('9day-container').innerHTML = html;
     }
 
