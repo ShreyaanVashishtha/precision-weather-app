@@ -145,7 +145,7 @@
         <div id="location-text" class="status-sub">Tracking current baseline vector...</div>
       </div>
       <div class="search-row">
-        <md-outlined-text-field id="query-input" class="search-input" label="Enter Global City or Region" value="New York"></md-outlined-text-field>
+        <md-outlined-text-field id="query-input" class="search-input" label="Enter Global City or Region"></md-outlined-text-field>
         <md-filled-button id="search-btn">Search</md-filled-button>
       </div>
     </div>
@@ -178,7 +178,7 @@
 
     <div class="visual-section">
       <h2 class="section-title">60-Minute Predictive Timeline Data</h2>
-      <p style="margin-bottom: 1rem;">Select observation matrix metric layer:</p>
+      <p style="margin-bottom: 1rem; color: #938F99; font-size: 0.9rem;">Select observation matrix metric layer:</p>
       <div class="chip-container">
         <md-filter-chip selected id="chip-rain" label="Precipitation"></md-filter-chip>
         <md-filter-chip id="chip-temp" label="Temperature"></md-filter-chip>
@@ -261,7 +261,8 @@
       if (!map) {
         map = L.map('map').setView([lat, lon], 9);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          attribution: '© OpenStreetMap contributors'
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 18
         }).addTo(map);
       } else {
         map.setView([lat, lon], 9);
@@ -299,14 +300,16 @@
       
       // Format timestamps dynamically
       const dateString = new Date(frame.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const isForecast = index >= (radarFrames.length - 3) ? " (FCST)" : ""; 
+      const isForecast = index >= (radarFrames.length - (radarFrames.length > 12 ? 3 : 0)) ? " (FCST)" : ""; 
       document.getElementById('radar-time').innerText = `${dateString}${isForecast}`;
 
       if (radarLayer) map.removeLayer(radarLayer);
 
-      // Render the tile layer
+      // Render the tile layer with maxNativeZoom handling the overlay limits
       radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
-        opacity: 0.65
+        opacity: 0.65,
+        maxNativeZoom: 12, // Automatically stretch map tiles when users zoom in closely
+        maxZoom: 18        // Allow deep zooming interactions
       }).addTo(map);
     }
 
