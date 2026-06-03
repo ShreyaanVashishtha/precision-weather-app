@@ -305,11 +305,12 @@
 
       if (radarLayer) map.removeLayer(radarLayer);
 
-      // Render the tile layer with maxNativeZoom handling the overlay limits
+      // Render the tile layer with a lowered maxNativeZoom
       radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
         opacity: 0.65,
-        maxNativeZoom: 12, // Automatically stretch map tiles when users zoom in closely
-        maxZoom: 18        // Allow deep zooming interactions
+        maxNativeZoom: 10, // Dropped to 10 to bypass RainViewer's low-res predictive frames
+        maxZoom: 18,       // Still allows you to zoom into street level visually
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' // Transparent 1x1 pixel fallback just in case
       }).addTo(map);
     }
 
