@@ -199,26 +199,21 @@
     let activeMetricKey = 'rainIntensity';
     let activeMetricLabel = 'Precipitation Intensity (mm/h)';
     
-    // Radar loop tracking matrices
     let radarFrames = [];
     let currentFrameIndex = 0;
     let radarInterval = null;
     let isPlaying = false;
 
     async function initApp() {
-      // Setup initial metric chip toggles
       setupMetricChips();
       
-      // Setup text field trigger handles
       document.getElementById('search-btn').addEventListener('click', executeLocationSearch);
       document.getElementById('query-input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') executeLocationSearch();
       });
       
-      // Setup animation loops
       document.getElementById('play-btn').addEventListener('click', toggleRadarAnimation);
 
-      // Perform default baseline tracking fetch
       try {
         const geoRes = await fetch('https://get.geojs.io/v1/ip/geo.json');
         const geoData = await geoRes.json();
@@ -227,8 +222,7 @@
         document.getElementById('query-input').value = geoData.city || "New York";
         triggerUpdateSequence(lat, lon, geoData.city || "Local Tracking Station");
       } catch (err) {
-        // Fallback baseline coordinates if geolocation returns error
-        triggerUpdateSequence(40.7128, -74.0060, "New York");
+        triggerUpdateSequence(22.3193, 114.1694, "Hong Kong"); // Defaulting to HK on failure
       }
     }
 
@@ -257,18 +251,16 @@
     function triggerUpdateSequence(lat, lon, name) {
       document.getElementById('location-text').innerText = `${name} (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
       
-      // Initialize or pan map
       if (!map) {
-        map = L.map('map').setView([lat, lon], 9);
+        map = L.map('map').setView([lat, lon], 11);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
           attribution: '© OpenStreetMap contributors',
           maxZoom: 18
         }).addTo(map);
       } else {
-        map.setView([lat, lon], 9);
+        map.setView([lat, lon], 11);
       }
 
-      // Sync data channels
       stopRadarAnimation();
       syncRadarTimeline(lat, lon);
       fetchNowcastData(lat, lon);
@@ -279,14 +271,12 @@
         const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
         const data = await response.json();
         
-        // Concat active historic arrays with predictive future nowcast streams
         const pastFrames = data.radar.past || [];
         const nowcastFrames = data.radar.nowcast || [];
         radarFrames = [...pastFrames, ...nowcastFrames];
         
         if (radarFrames.length === 0) return;
         
-        // Jump directly to the latest historical actual observation frame
         currentFrameIndex = pastFrames.length > 0 ? pastFrames.length - 1 : 0;
         renderRadarFrame(currentFrameIndex);
       } catch (err) {
@@ -298,19 +288,18 @@
       if (!radarFrames[index]) return;
       const frame = radarFrames[index];
       
-      // Format timestamps dynamically
       const dateString = new Date(frame.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const isForecast = index >= (radarFrames.length - (radarFrames.length > 12 ? 3 : 0)) ? " (FCST)" : ""; 
+      // RainViewer usually provides 3 predictive frames in the array
+      const isForecast = index >= (radarFrames.length - 3) ? " (FCST)" : ""; 
       document.getElementById('radar-time').innerText = `${dateString}${isForecast}`;
 
       if (radarLayer) map.removeLayer(radarLayer);
 
-      // Render the tile layer with a lowered maxNativeZoom
       radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
         opacity: 0.65,
-        maxNativeZoom: 10, // Dropped to 10 to bypass RainViewer's low-res predictive frames
-        maxZoom: 18,       // Still allows you to zoom into street level visually
-        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' // Transparent 1x1 pixel fallback just in case
+        maxNativeZoom: 10, // Locks resolution fetching to prevent "Not Supported" boxes
+        maxZoom: 18,       // Allows deep visual stretching
+        errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=' // Transparent fallback
       }).addTo(map);
     }
 
@@ -324,7 +313,7 @@
         radarInterval = setInterval(() => {
           currentFrameIndex = (currentFrameIndex + 1) % radarFrames.length;
           renderRadarFrame(currentFrameIndex);
-        }, 800); // Transition frame states every 800ms
+        }, 800);
       }
     }
 
@@ -404,7 +393,6 @@
       Object.keys(configurationMap).forEach(id => {
         const chip = document.getElementById(id);
         chip.addEventListener('click', () => {
-          // Deselect alternative visual nodes
           Object.keys(configurationMap).forEach(cid => {
             if (cid !== id) document.getElementById(cid).selected = false;
           });
