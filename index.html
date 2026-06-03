@@ -29,7 +29,6 @@
   <style>
     body { background-color: #0B0B12; color: #E6E1E5; -webkit-font-smoothing: antialiased; }
     
-    /* SaaS Glass & Card Design System */
     .premium-panel { background: #121420; border: 1px solid rgba(255, 255, 255, 0.05); border-radius: 24px; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2); }
     .metric-card { background: rgba(255, 255, 255, 0.02); border: 1px solid rgba(255, 255, 255, 0.03); border-radius: 16px; transition: all 0.3s ease; }
     .metric-card:hover { background: rgba(255, 255, 255, 0.04); transform: translateY(-2px); border-color: rgba(157, 125, 255, 0.2); }
@@ -131,13 +130,11 @@
       
       <div class="premium-panel p-1.5 relative h-[450px] flex flex-col group">
         <div id="map" class="bg-black"></div>
-        
         <div class="absolute top-4 left-4 z-[400] flex gap-2">
           <button class="bg-surface/90 backdrop-blur text-xs font-semibold px-3 py-1.5 rounded-lg border border-white/10 shadow flex items-center gap-2 text-white hover:bg-white/10 transition-colors">
             <i data-lucide="layers" class="w-3.5 h-3.5 text-accent"></i> Radar Overlay
           </button>
         </div>
-        
         <div class="absolute bottom-4 left-4 right-4 z-[400] bg-surface/95 backdrop-blur-xl rounded-xl border border-white/10 p-3 shadow-2xl flex items-center gap-4">
           <button id="play-btn" class="w-10 h-10 flex items-center justify-center bg-accent text-background rounded-full hover:bg-accent/90 transition-all shadow-[0_0_15px_rgba(157,125,255,0.4)]">
             <i data-lucide="play" class="w-5 h-5 ml-0.5" id="play-icon"></i>
@@ -167,8 +164,7 @@
 
       <div class="premium-panel p-6">
         <h3 class="font-semibold text-sm uppercase text-white mb-4 flex items-center gap-2"><i data-lucide="clock-4" class="w-4 h-4 text-accent"></i> 120-Minute Precision Nowcast</h3>
-        <div class="flex overflow-x-auto gap-4 pb-2 no-scrollbar" id="nowcast-timeline">
-          </div>
+        <div class="flex overflow-x-auto gap-4 pb-2 no-scrollbar" id="nowcast-timeline"></div>
       </div>
 
       <div class="premium-panel p-6">
@@ -199,14 +195,12 @@
     lucide.createIcons();
     let map = null, radarLayer = null, analyticsChart = null;
     let radarFrames = [], currentFrameIndex = 0, radarInterval = null, isPlaying = false;
-
-    // Design System Constants
     const COLORS = { accent: '#9D7DFF', grid: 'rgba(255,255,255,0.05)', bg: 'rgba(20, 20, 32, 0.95)' };
 
     window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('search-input').addEventListener('keydown', (e) => { if (e.key === 'Enter') triggerSearch(e.target.value); });
       document.getElementById('play-btn').addEventListener('click', toggleRadarAnimation);
-      triggerSearch('Hong Kong'); // Default Launch
+      triggerSearch('Hong Kong');
     });
 
     async function triggerSearch(query) {
@@ -231,13 +225,10 @@
         map = L.map('map', { zoomControl: false, attributionControl: false }).setView([lat, lon], 10);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(map);
       } else { map.setView([lat, lon], 10); }
-      
       syncRadarTimeline();
       fetchMeteorologicalData(lat, lon);
     }
 
-    // --- CRITICAL RADAR FIX ---
-    // Strictly bounds fetching to historical frames (data.radar.past) to avoid "Zoom Not Supported" boxes.
     async function syncRadarTimeline() {
       try {
         const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
@@ -276,14 +267,13 @@
       }
     }
 
-    // --- MAIN TELEMETRY LOOP ---
     async function fetchMeteorologicalData(lat, lon) {
       try {
-        const response = await fetch(`/.netlify/functions/nowcast?lat=${lat}&lon=${lon}`);
+        // ---- CRITICAL FIX: Changed from /.netlify/functions/nowcast to /api/nowcast for VERCEL ----
+        const response = await fetch(`/api/nowcast?lat=${lat}&lon=${lon}`);
         const data = await response.json();
         if(data.error) throw new Error(data.error);
 
-        // 1. Meta & Hero
         document.getElementById('sync-time').innerText = data.meta.timestamp;
         document.getElementById('sync-time').className = "text-xs font-mono text-success";
         document.getElementById('station-name').innerText = data.meta.station;
@@ -298,12 +288,11 @@
         document.getElementById('hero-icon').setAttribute('data-lucide', data.current.icon);
         document.getElementById('hero-icon-bg').setAttribute('data-lucide', data.current.icon);
 
-        // 2. Alert Banner (Top)
         const banner = document.getElementById('top-alert-banner');
         if (data.warnings && data.warnings.length > 0) {
           const w = data.warnings[0];
           banner.classList.remove('hidden');
-          banner.style.backgroundColor = `${w.color}20`; // 20% opacity background
+          banner.style.backgroundColor = `${w.color}20`;
           banner.style.borderColor = w.color;
           document.getElementById('banner-title').innerText = w.title;
           document.getElementById('banner-title').style.color = w.color;
@@ -313,7 +302,6 @@
           banner.classList.add('hidden');
         }
 
-        // 3. Grid Metrics
         document.getElementById('metric-hum').innerText = `${Math.round(data.current.humidity)}%`;
         document.getElementById('metric-dew').innerText = `Dew Point ${Math.round(data.current.dewPoint)}°`;
         document.getElementById('metric-wind').innerText = data.current.windSpeed.toFixed(1);
@@ -323,7 +311,6 @@
         document.getElementById('metric-uv').innerText = data.current.uvIndex;
         document.getElementById('metric-uv-label').innerText = data.current.uvLabel;
         
-        // AQI Styling
         document.getElementById('metric-aqi').innerText = data.aqi.index;
         document.getElementById('metric-aqi-label').innerText = data.aqi.label;
         document.getElementById('metric-aqi-label').style.color = data.aqi.color;
@@ -332,14 +319,12 @@
         document.getElementById('metric-pm25').innerText = `PM2.5: ${data.aqi.pm25}`;
         document.getElementById('metric-pm10').innerText = `PM10: ${data.aqi.pm10}`;
 
-        // 4. Intelligence & Transparency
         document.getElementById('ai-insights-list').innerHTML = data.insights.map(text => `<li class="flex items-start gap-3 text-sm text-gray-300"><span class="w-1.5 h-1.5 rounded-full bg-accent mt-1.5 flex-shrink-0 shadow-[0_0_8px_rgba(157,125,255,0.8)]"></span>${text}</li>`).join('');
         document.getElementById('src-current').innerText = data.meta.sources.current;
         document.getElementById('src-forecast').innerText = data.meta.sources.forecast;
         document.getElementById('src-aqi').innerText = data.meta.sources.aqi;
         document.getElementById('src-warn').innerText = data.meta.sources.warnings;
 
-        // 5. Timelines
         document.getElementById('nowcast-timeline').innerHTML = data.nowcast.map(n => `
           <div class="flex flex-col items-center justify-center min-w-[70px] bg-black/20 rounded-xl p-3 border border-white/5">
             <span class="text-[11px] text-gray-400 font-bold tracking-wider mb-2">${n.label}</span>
@@ -372,7 +357,6 @@
           </div>
         `).join('');
 
-        // Conditional Cyclone Module
         const conditionalModules = document.getElementById('conditional-modules');
         conditionalModules.innerHTML = '';
         if (data.cyclone) {
