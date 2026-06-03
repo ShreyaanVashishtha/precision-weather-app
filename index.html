@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Hyper-Precise Weather</title>
+  <script type="importmap">
+    {
+      "imports": {
+        "@material/web/": "https://esm.run/@material/web/"
+      }
+    }
+  </script>
+  <script type="module" src="https://esm.run/@material/web/all.js"></script>
+  <style>
+    body {
+      font-family: Roboto, system-ui, sans-serif;
+      background-color: #f4f5f7;
+      display: flex;
+      justify-content: center;
+      padding: 2rem;
+      margin: 0;
+    }
+    .dashboard {
+      background: white;
+      padding: 2rem;
+      border-radius: 28px;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+      width: 100%;
+      max-width: 600px;
+    }
+    #output {
+      margin-top: 1.5rem;
+      padding: 1rem;
+      background: #e1e2e8;
+      border-radius: 12px;
+      font-family: monospace;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="dashboard">
+    <h2>Minute-by-Minute Nowcast</h2>
+    <p id="status">Locating...</p>
+    <md-filled-button id="refreshBtn" disabled>Refresh Data</md-filled-button>
+    <div id="output">Awaiting data...</div>
+  </div>
+
+  <script type="module">
+    const statusEl = document.getElementById('status');
+    const outputEl = document.getElementById('output');
+    const refreshBtn = document.getElementById('refreshBtn');
+
+    let currentLat, currentLon;
+
+    // 1. Get Location via GeoJS
+    async function getLocation() {
+      try {
+        const res = await fetch('https://get.geojs.io/v1/ip/geo.json');
+        const data = await res.json();
+        currentLat = data.latitude;
+        currentLon = data.longitude;
+        statusEl.innerText = `Location: ${data.city} (${currentLat}, ${currentLon})`;
+        refreshBtn.disabled = false;
+        fetchWeather(currentLat, currentLon);
+      } catch (err) {
+        statusEl.innerText = 'Failed to get location.';
+      }
+    }
+
+    // 2. Fetch Weather from your Netlify Function
+    async function fetchWeather(lat, lon) {
+      outputEl.innerText = "Loading minute-by-minute data...";
+      try {
+        const response = await fetch(`/.netlify/functions/nowcast?lat=${lat}&lon=${lon}`);
+        const result = await response.json();
+        
+        if (result.error) {
+          outputEl.innerText = `Error: ${result.error}`;
+          return;
+        }
+
+        // Displaying the raw minutely array for you to hook into your charts
+        const minutelyData = result.data.timelines.minutely.slice(0, 5); // Just showing first 5 mins for preview
+        outputEl.innerText = JSON.stringify(minutelyData, null, 2);
+        
+      } catch (error) {
+        outputEl.innerText = "Error fetching from Netlify function.";
+      }
+    }
+
+    refreshBtn.addEventListener('click', () => {
+      if (currentLat && currentLon) fetchWeather(currentLat, currentLon);
+    });
+
+    // Init
+    getLocation();
+  </script>
+</body>
+</html>
