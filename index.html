@@ -14,10 +14,8 @@
     }
   </script>
   <script type="module" src="https://esm.run/@material/web/all.js"></script>
-
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
   <style>
@@ -26,6 +24,7 @@
       --md-sys-color-background: #1C1B1F;
       --md-sys-color-surface: #25242A;
       --md-sys-color-on-surface: #E6E1E5;
+      --md-sys-color-error: #FFB4AB;
     }
 
     body {
@@ -68,6 +67,7 @@
 
     h1 { margin: 0; font-size: 1.5rem; font-weight: 700; }
     .status-sub { margin: 2px 0 0 0; color: #938F99; font-size: 0.9rem; }
+    .status-error { color: var(--md-sys-color-error); font-weight: 500; }
 
     .metrics-grid {
       display: grid;
@@ -100,40 +100,11 @@
 
     .section-title { font-size: 1.1rem; font-weight: 500; margin: 0; }
 
-    #map {
-      height: 350px;
-      border-radius: 16px;
-      z-index: 1;
-    }
-
-    .chip-container {
-      display: flex;
-      gap: 0.5rem;
-      margin-bottom: 1rem;
-      overflow-x: auto;
-      padding-bottom: 4px;
-    }
-
-    .chart-container {
-      position: relative;
-      height: 260px;
-      width: 100%;
-    }
-
-    .radar-controls {
-      display: flex;
-      align-items: center;
-      gap: 1rem;
-    }
-
-    #radar-time {
-      font-family: monospace;
-      font-size: 0.95rem;
-      color: #D0BCFF;
-      background: #313033;
-      padding: 4px 8px;
-      border-radius: 6px;
-    }
+    #map { height: 350px; border-radius: 16px; z-index: 1; }
+    .chip-container { display: flex; gap: 0.5rem; margin-bottom: 1rem; overflow-x: auto; padding-bottom: 4px; }
+    .chart-container { position: relative; height: 260px; width: 100%; }
+    .radar-controls { display: flex; align-items: center; gap: 1rem; }
+    #radar-time { font-family: monospace; font-size: 0.95rem; color: #D0BCFF; background: #313033; padding: 4px 8px; border-radius: 6px; }
   </style>
 </head>
 <body>
@@ -142,7 +113,7 @@
     <div class="header-card">
       <div>
         <h1>Precision Analytics Weather Station</h1>
-        <div id="location-text" class="status-sub">Tracking current baseline vector...</div>
+        <div id="location-text" class="status-sub">Initializing matrix...</div>
       </div>
       <div class="search-row">
         <md-outlined-text-field id="query-input" class="search-input" label="Enter Global City or Region"></md-outlined-text-field>
@@ -179,7 +150,7 @@
 
     <div class="visual-section">
       <div class="section-header-row">
-        <h2 class="section-title">Animated Radar Timeline (Past + Forecast)</h2>
+        <h2 class="section-title">Animated Radar Timeline (Historical High-Res)</h2>
         <div class="radar-controls">
           <span id="radar-time">--:--</span>
           <md-filled-button id="play-btn">Play</md-filled-button>
@@ -189,7 +160,7 @@
     </div>
 
     <div class="visual-section">
-      <h2 class="section-title">24-Hour Atmospheric Trends (Combined Matrix)</h2>
+      <h2 class="section-title">24-Hour Atmospheric Trends (Consensus Blend)</h2>
       <p style="margin-bottom: 1rem; color: #938F99; font-size: 0.9rem;">Temperature profile overlaying probability curves</p>
       <div class="chart-container">
         <canvas id="macroHourlyChart"></canvas>
@@ -212,48 +183,34 @@
   </div>
 
   <script>
-    let map = null;
-    let radarLayer = null;
-    let weatherChart = null;
-    let hourlyChart = null;
-    let rawTimelineData = [];
-    let rawHourlyData = [];
-    
-    let activeMetricKey = 'rainIntensity';
-    let activeMetricLabel = 'Precipitation Intensity (mm/h)';
-    
-    let radarFrames = [];
-    let currentFrameIndex = 0;
-    let radarInterval = null;
-    let isPlaying = false;
+    let map = null, radarLayer = null, weatherChart = null, hourlyChart = null;
+    let rawTimelineData = [], rawHourlyData = [];
+    let activeMetricKey = 'rainIntensity', activeMetricLabel = 'Precipitation Intensity (mm/h)';
+    let radarFrames = [], currentFrameIndex = 0, radarInterval = null, isPlaying = false;
 
-    async function initApp() {
+    // Default Configuration: Hong Kong
+    const DEFAULT_LAT = 22.3193;
+    const DEFAULT_LON = 114.1694;
+    const DEFAULT_NAME = "Hong Kong";
+
+    function initApp() {
       setupMetricChips();
-      
       document.getElementById('search-btn').addEventListener('click', executeLocationSearch);
       document.getElementById('query-input').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') executeLocationSearch();
       });
-      
       document.getElementById('play-btn').addEventListener('click', toggleRadarAnimation);
-
-      try {
-        const geoRes = await fetch('https://get.geojs.io/v1/ip/geo.json');
-        const geoData = await geoRes.json();
-        const lat = parseFloat(geoData.latitude);
-        const lon = parseFloat(geoData.longitude);
-        document.getElementById('query-input').value = geoData.city || "Hong Kong";
-        triggerUpdateSequence(lat, lon, geoData.city || "Local Tracking Station");
-      } catch (err) {
-        triggerUpdateSequence(22.3193, 114.1694, "Hong Kong"); 
-      }
+      
+      document.getElementById('query-input').value = DEFAULT_NAME;
+      triggerUpdateSequence(DEFAULT_LAT, DEFAULT_LON, DEFAULT_NAME);
     }
 
     async function executeLocationSearch() {
       const query = document.getElementById('query-input').value.trim();
       if (!query) return;
-
+      document.getElementById('location-text').className = "status-sub";
       document.getElementById('location-text').innerText = "Querying geocoding registry...";
+      
       try {
         const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(query)}`);
         const data = await res.json();
@@ -262,45 +219,40 @@
           document.getElementById('location-text').innerText = "Location matrix lookup returned zero results.";
           return;
         }
-
-        const lat = parseFloat(data[0].lat);
-        const lon = parseFloat(data[0].lon);
-        triggerUpdateSequence(lat, lon, data[0].display_name.split(',')[0]);
+        triggerUpdateSequence(parseFloat(data[0].lat), parseFloat(data[0].lon), data[0].display_name.split(',')[0]);
       } catch (err) {
         document.getElementById('location-text').innerText = "Geocoding network transition error.";
       }
     }
 
     function triggerUpdateSequence(lat, lon, name) {
+      document.getElementById('location-text').className = "status-sub";
       document.getElementById('location-text').innerText = `${name} (${lat.toFixed(4)}, ${lon.toFixed(4)})`;
       
       if (!map) {
         map = L.map('map').setView([lat, lon], 11);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-          attribution: '© OpenStreetMap contributors',
-          maxZoom: 18
+          attribution: '© OpenStreetMap contributors', maxZoom: 18
         }).addTo(map);
       } else {
         map.setView([lat, lon], 11);
       }
-
       stopRadarAnimation();
-      syncRadarTimeline(lat, lon);
+      syncRadarTimeline();
       fetchNowcastData(lat, lon);
     }
 
-    async function syncRadarTimeline(lat, lon) {
+    async function syncRadarTimeline() {
       try {
         const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
         const data = await response.json();
         
-        const pastFrames = data.radar.past || [];
-        const nowcastFrames = data.radar.nowcast || [];
-        radarFrames = [...pastFrames, ...nowcastFrames];
-        
+        // CRITICAL FIX: Only grab past historical radar frames. 
+        // We drop 'data.radar.nowcast' entirely to prevent gray "Zoom Not Supported" blocks.
+        radarFrames = data.radar.past || [];
         if (radarFrames.length === 0) return;
         
-        currentFrameIndex = pastFrames.length > 0 ? pastFrames.length - 1 : 0;
+        currentFrameIndex = radarFrames.length - 1; // Start at most recent
         renderRadarFrame(currentFrameIndex);
       } catch (err) {
         console.error("Radar sync routine failure:", err);
@@ -312,24 +264,22 @@
       const frame = radarFrames[index];
       
       const dateString = new Date(frame.time * 1000).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      const isForecast = index >= (radarFrames.length - 3) ? " (FCST)" : ""; 
-      document.getElementById('radar-time').innerText = `${dateString}${isForecast}`;
+      document.getElementById('radar-time').innerText = dateString;
 
       if (radarLayer) map.removeLayer(radarLayer);
 
       radarLayer = L.tileLayer(`https://tilecache.rainviewer.com${frame.path}/256/{z}/{x}/{y}/2/1_1.png`, {
-        opacity: 0.65,
-        maxNativeZoom: 10, 
-        maxZoom: 18,       
+        opacity: 0.7,
+        maxNativeZoom: 12, // High-res since we only use historical frames
+        maxZoom: 18,
         errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII='
       }).addTo(map);
     }
 
     function toggleRadarAnimation() {
       const btn = document.getElementById('play-btn');
-      if (isPlaying) {
-        stopRadarAnimation();
-      } else {
+      if (isPlaying) { stopRadarAnimation(); } 
+      else {
         isPlaying = true;
         btn.innerText = "Pause";
         radarInterval = setInterval(() => {
@@ -349,21 +299,27 @@
       try {
         const response = await fetch(`/.netlify/functions/nowcast?lat=${lat}&lon=${lon}`);
         const json = await response.json();
-        if (json.error) throw new Error(json.error);
-
-        rawTimelineData = json.data.timelines.minutely || [];
-        rawHourlyData = json.data.timelines.hourly || [];
         
-        updateUIElements();
-        buildOrUpdateHourlyChart();
+        // Handle backend API limits (e.g. 429 Too Many Requests) gracefully
+        if (json.error) {
+           document.getElementById('location-text').innerText = `API Fault: ${json.error}`;
+           document.getElementById('location-text').className = "status-error";
+           return;
+        }
+
+        rawTimelineData = json.data?.timelines?.minutely || [];
+        rawHourlyData = json.data?.timelines?.hourly || [];
+        
+        if (rawTimelineData.length > 0) updateUIElements();
+        if (rawHourlyData.length > 0) buildOrUpdateHourlyChart();
+        
       } catch (error) {
-        console.error("Nowcast channel link failure:", error);
+        document.getElementById('location-text').innerText = "Critical network failure fetching consensus data.";
+        document.getElementById('location-text').className = "status-error";
       }
     }
 
     function updateUIElements() {
-      if (!rawTimelineData || rawTimelineData.length === 0) return;
-      
       const baselineSnapshot = rawTimelineData[0].values;
       document.getElementById('meta-temp').innerText = `${baselineSnapshot.temperature.toFixed(1)}°C`;
       document.getElementById('meta-rain').innerText = `${baselineSnapshot.rainIntensity.toFixed(2)} mm/h`;
@@ -384,22 +340,13 @@
         const ctx = document.getElementById('nowcastChart').getContext('2d');
         weatherChart = new Chart(ctx, {
           type: 'line',
-          data: {
-            labels: labels,
-            datasets: [{
-              label: activeMetricLabel,
-              data: extractionDataset,
-              borderColor: '#D0BCFF',
-              backgroundColor: 'rgba(208, 188, 255, 0.08)',
-              borderWidth: 2,
-              fill: true,
-              tension: 0.25,
-              pointRadius: 0
-            }]
-          },
+          data: { labels: labels, datasets: [{
+              label: activeMetricLabel, data: extractionDataset,
+              borderColor: '#D0BCFF', backgroundColor: 'rgba(208, 188, 255, 0.08)',
+              borderWidth: 2, fill: true, tension: 0.25, pointRadius: 0
+          }]},
           options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             plugins: { legend: { display: true, labels: { color: '#E6E1E5' } } },
             scales: {
               x: { grid: { display: false }, ticks: { color: '#938F99', maxTicksLimit: 6 } },
@@ -411,74 +358,31 @@
     }
 
     function buildOrUpdateHourlyChart() {
-      if (!rawHourlyData || rawHourlyData.length === 0) return;
-
       const structuralWindow = rawHourlyData.slice(0, 24);
-      
-      const labels = structuralWindow.map(entry => {
-        return new Date(entry.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-      });
-      
-      const tempDataset = structuralWindow.map(entry => entry.values.temperature);
-      const precipProbabilityDataset = structuralWindow.map(entry => entry.values.precipitationProbability ?? 0);
+      const labels = structuralWindow.map(e => new Date(e.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
+      const tempDataset = structuralWindow.map(e => e.values.temperature);
+      const precipDataset = structuralWindow.map(e => e.values.precipitationProbability ?? 0);
 
       if (hourlyChart) {
         hourlyChart.data.labels = labels;
         hourlyChart.data.datasets[0].data = tempDataset;
-        hourlyChart.data.datasets[1].data = precipProbabilityDataset;
+        hourlyChart.data.datasets[1].data = precipDataset;
         hourlyChart.update();
       } else {
         const ctx = document.getElementById('macroHourlyChart').getContext('2d');
         hourlyChart = new Chart(ctx, {
           type: 'bar',
-          data: {
-            labels: labels,
-            datasets: [
-              {
-                type: 'line',
-                label: 'Temperature (°C)',
-                data: tempDataset,
-                borderColor: '#D0BCFF',
-                borderWidth: 2.5,
-                yAxisID: 'y-temp',
-                tension: 0.3,
-                pointRadius: 1,
-                fill: false
-              },
-              {
-                type: 'bar',
-                label: 'Precipitation Probability (%)',
-                data: precipProbabilityDataset,
-                backgroundColor: 'rgba(103, 80, 164, 0.4)',
-                borderColor: '#6750A4',
-                borderWidth: 1,
-                yAxisID: 'y-precip',
-                barPercentage: 0.6
-              }
-            ]
-          },
+          data: { labels: labels, datasets: [
+              { type: 'line', label: 'Temperature (°C)', data: tempDataset, borderColor: '#D0BCFF', borderWidth: 2.5, yAxisID: 'y-temp', tension: 0.3, pointRadius: 1, fill: false },
+              { type: 'bar', label: 'Precipitation Prob (%)', data: precipDataset, backgroundColor: 'rgba(103, 80, 164, 0.4)', borderColor: '#6750A4', borderWidth: 1, yAxisID: 'y-precip', barPercentage: 0.6 }
+          ]},
           options: {
-            responsive: true,
-            maintainAspectRatio: false,
+            responsive: true, maintainAspectRatio: false,
             plugins: { legend: { labels: { color: '#E6E1E5' } } },
             scales: {
               x: { grid: { display: false }, ticks: { color: '#938F99', maxTicksLimit: 8 } },
-              'y-temp': {
-                type: 'linear',
-                position: 'left',
-                grid: { color: '#49454F' },
-                ticks: { color: '#D0BCFF' },
-                title: { display: true, text: 'Temperature (°C)', color: '#D0BCFF' }
-              },
-              'y-precip': {
-                type: 'linear',
-                position: 'right',
-                min: 0,
-                max: 100,
-                grid: { display: false },
-                ticks: { color: '#938F99' },
-                title: { display: true, text: 'Precipitation %', color: '#938F99' }
-              }
+              'y-temp': { type: 'linear', position: 'left', grid: { color: '#49454F' }, ticks: { color: '#D0BCFF' }, title: { display: true, text: 'Temp (°C)', color: '#D0BCFF' } },
+              'y-precip': { type: 'linear', position: 'right', min: 0, max: 100, grid: { display: false }, ticks: { color: '#938F99' }, title: { display: true, text: 'Precip %', color: '#938F99' } }
             }
           }
         });
@@ -486,23 +390,19 @@
     }
 
     function setupMetricChips() {
-      const configurationMap = {
-        'chip-rain': { key: 'rainIntensity', label: 'Precipitation Intensity (mm/h)' },
+      const config = {
+        'chip-rain': { key: 'rainIntensity', label: 'Precipitation (mm/h)' },
         'chip-temp': { key: 'temperature', label: 'Temperature (°C)' },
         'chip-wind': { key: 'windSpeed', label: 'Wind Velocity (m/s)' },
         'chip-humidity': { key: 'humidity', label: 'Relative Humidity (%)' }
       };
-
-      Object.keys(configurationMap).forEach(id => {
+      Object.keys(config).forEach(id => {
         const chip = document.getElementById(id);
         chip.addEventListener('click', () => {
-          Object.keys(configurationMap).forEach(cid => {
-            if (cid !== id) document.getElementById(cid).selected = false;
-          });
+          Object.keys(config).forEach(cid => { if (cid !== id) document.getElementById(cid).selected = false; });
           chip.selected = true;
-          
-          activeMetricKey = configurationMap[id].key;
-          activeMetricLabel = configurationMap[id].label;
+          activeMetricKey = config[id].key;
+          activeMetricLabel = config[id].label;
           updateUIElements();
         });
       });
